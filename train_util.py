@@ -85,7 +85,7 @@ class TrainLoop:
 
         self.checkpoint_path = checkpoint_path # DEBUG **
 
-        self._load_and_sync_parameters()
+        # self._load_and_sync_parameters() # ADD BY ME (we don't need sync, because we use single machine)
         if self.use_fp16:
             self._setup_fp16()
 
@@ -175,6 +175,9 @@ class TrainLoop:
             or self.step + self.resume_step < self.learning_steps
         ):
             batch, cond = next(self.data)
+            # print("batch: ", batch)
+            # print("cond: ", cond)
+
             self.run_step(batch, cond)
             if self.step % self.log_interval == 0:
                 logger.dumpkvs()
@@ -242,6 +245,9 @@ class TrainLoop:
             }
             last_batch = (i + self.microbatch) >= batch.shape[0]
             t, weights = self.schedule_sampler.sample(micro.shape[0], dist_util.dev())
+            # print("t: ", t)
+            # print("weights: ", weights)
+
             # print(micro_cond.keys())
             compute_losses = functools.partial(
                 self.diffusion.training_losses,

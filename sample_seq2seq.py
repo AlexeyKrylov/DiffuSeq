@@ -29,8 +29,8 @@ from basic_utils import (
 )
 
 def create_argparser():
-    defaults = dict(model_path='', step=0, out_dir='', top_p=0)
-    decode_defaults = dict(split='valid', clamp_step=0, seed2=105, clip_denoised=False)
+    defaults = dict(model_path='./checkpoint-path/ema_0.999_099000.pt', step=2000, out_dir='', top_p=1)
+    decode_defaults = dict(split='test', clamp_step=0, seed2=105, clip_denoised=False)
     defaults.update(load_defaults_config())
     defaults.update(decode_defaults)
     parser = argparse.ArgumentParser()
@@ -45,8 +45,9 @@ def main():
     logger.configure()
 
     # load configurations.
-    config_path = os.path.join(os.path.split(args.model_path)[0], "training_args.json")
+    config_path = "./checkpoint-path/training_args.json"
     print(config_path)
+    import sys
     # sys.setdefaultencoding('utf-8')
     with open(config_path, 'rb', ) as f:
         training_args = json.load(f)
@@ -80,13 +81,12 @@ def main():
 
     ## load data
     data_valid = load_data_text(
-        batch_size=args.batch_size,
+        batch_size=4,
         seq_len=args.seq_len,
         deterministic=True,
         data_args=args,
         split=args.split,
-        loaded_vocab=tokenizer,
-        model_emb=model_emb.cpu(), # using the same embedding wight with tranining data
+        loaded_vocab=tokenizer,        model_emb=model_emb.cpu(), # using the same embedding wight with tranining data
         loop=False
     )
 
@@ -137,6 +137,7 @@ def main():
             step_gap = 1
         else:
             args.use_ddim = True
+            print(args)
             step_gap = args.diffusion_steps//args.step
 
         sample_fn = (
@@ -200,6 +201,7 @@ def main():
 
         fout = open(out_path, 'a')
         for (recov, ref, src) in zip(word_lst_recover, word_lst_ref, word_lst_source):
+            print(json.dumps({"recover": recov, "reference": ref, "source": src}))
             print(json.dumps({"recover": recov, "reference": ref, "source": src}), file=fout)
         fout.close()
 

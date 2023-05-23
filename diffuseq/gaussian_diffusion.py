@@ -552,7 +552,8 @@ class GaussianDiffusion:
         logits = get_logits(reshaped_x_t)  # bsz, seqlen, vocab
         # print(logits.shape)
         loss_fct = th.nn.CrossEntropyLoss(reduction='none')
-        decoder_nll = loss_fct(logits.view(-1, logits.size(-1)), input_ids.view(-1)).view(input_ids.shape)
+
+        decoder_nll = loss_fct(logits.view(-1, logits.size(-1)), input_ids.view(-1).long()).view(input_ids.shape) ## ADD BY ME long
         if mask != None:
             decoder_nll *= mask
         # print(decoder_nll.shape)
@@ -598,13 +599,18 @@ class GaussianDiffusion:
         input_ids_x = model_kwargs.pop('input_ids').to(t.device)
         input_ids_mask = model_kwargs.pop('input_mask').to(t.device)
         x_start_mean = model.model.module.get_embeds(input_ids_x)
-        
+
+        # print("input_ids_x: ", input_ids_x)
+        # print("input_ids_mask: ", input_ids_mask)
+        # print("x_start_mean: ", x_start_mean)
+        #
+        # raise StopIteration
         std = _extract_into_tensor(self.sqrt_one_minus_alphas_cumprod,
                                    th.tensor([0]).to(x_start_mean.device),
                                    x_start_mean.shape)
         # print(std.shape, )
         # x_start_log_var = 2 * th.log(std)
-        x_start = self._get_x_start(x_start_mean, std)
+        x_start = self._get_x_start(x_start_mean, std) # add noise
         # print(x_start_mean.shape, x_start.shape)
         if noise is None:
             noise = th.randn_like(x_start)

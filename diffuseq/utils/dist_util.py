@@ -19,19 +19,20 @@ def setup_dist():
     """
     if dist.is_initialized():
         return
-
-    backend = "gloo" if not th.cuda.is_available() else "nccl"
+    backend = "gloo" # if not th.cuda.is_available() else "nccl" # ADD BY ME (NCCL isn't on Windows)
 
     if backend == "gloo":
         hostname = "localhost"
     else:
         hostname = socket.gethostbyname(socket.getfqdn())
+    print(hostname) # ADD BY ME
 
     if os.environ.get("LOCAL_RANK") is None:
         os.environ["MASTER_ADDR"] = hostname
         os.environ["RANK"] = str(0)
         os.environ["WORLD_SIZE"] = str(1)
         port = _find_free_port()
+        print(_find_free_port()) # ADD BY ME
         os.environ["MASTER_PORT"] = str(port)
         os.environ['LOCAL_RANK'] = str(0)
     
@@ -61,6 +62,7 @@ def sync_params(params):
     """
     Synchronize a sequence of Tensors across ranks from rank 0.
     """
+
     for p in params:
         with th.no_grad():
             dist.broadcast(p, 0)

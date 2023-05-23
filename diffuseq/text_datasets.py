@@ -1,4 +1,4 @@
-# import blobfile as bf
+import blobfile as bf
 import numpy as np
 from torch.utils.data import DataLoader, Dataset
 
@@ -84,7 +84,7 @@ def helper_tokenize(sentence_lst, vocab_dict, seq_len):
         desc="Running tokenizer on dataset",
     )
     print('### tokenized_datasets', tokenized_datasets)
-    print('### tokenized_datasets...example', tokenized_datasets['input_id_x'][0])
+
     print(f"RAM used: {psutil.Process().memory_info().rss / (1024 * 1024):.2f} MB")
 
     def merge_and_mask(group_lst):
@@ -134,6 +134,11 @@ def helper_tokenize(sentence_lst, vocab_dict, seq_len):
     )
 
     print(lm_datasets, 'padded dataset')
+    print('### tokenized_datasets...example X', lm_datasets['input_id_x'][0])
+    print('### tokenized_datasets...example Y', lm_datasets['input_id_y'][0])
+    print('### tokenized_datasets...example ids', lm_datasets['input_ids'][0])
+    print('### tokenized_datasets...example mask', lm_datasets['input_mask'][0])
+
     print(f"RAM used: {psutil.Process().memory_info().rss / (1024 * 1024):.2f} MB")
 
     raw_datasets = datasets.DatasetDict()

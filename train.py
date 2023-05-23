@@ -21,8 +21,10 @@ from transformers import set_seed
 import wandb
 
 ### custom your wandb setting here ###
-# os.environ["WANDB_API_KEY"] = ""
-os.environ["WANDB_MODE"] = "offline"
+os.environ["WANDB_API_KEY"] = "11f51a2ea2a41b8b79f0ebc544208a24a8ff6cab"
+os.environ["WANDB_MODE"] = "online"
+
+os.environ["PL_TORCH_DISTRIBUTED_BACKEND"] = "gloo"
 
 def create_argparser():
     defaults = dict()
@@ -33,6 +35,7 @@ def create_argparser():
 
 def main():
     args = create_argparser().parse_args()
+    print(args) # ADD BY ME
     set_seed(args.seed) 
     dist_util.setup_dist()
     logger.configure()
@@ -50,6 +53,15 @@ def main():
     )
     next(data)
 
+    # data = load_data_text(
+    #     batch_size=args.batch_size,
+    #     seq_len=args.seq_len,
+    #     data_args=args,
+    #     split='valid',
+    #     deterministic=True,
+    #     loaded_vocab=tokenizer,
+    #     model_emb=model_weight  # using the same embedding wight with tranining data
+    # )
     data_valid = load_data_text(
         batch_size=args.batch_size,
         seq_len=args.seq_len,
@@ -60,6 +72,7 @@ def main():
         model_emb=model_weight # using the same embedding wight with tranining data
     )
 
+    next(data_valid)
     print('#'*30, 'size of vocab', args.vocab_size)
 
     logger.log("### Creating model and diffusion...")
@@ -67,9 +80,9 @@ def main():
     model, diffusion = create_model_and_diffusion(
         **args_to_dict(args, load_defaults_config().keys())
     )
-    # print('#'*30, 'cuda', dist_util.dev())
+    print('#'*30, 'cuda', dist_util.dev())
     model.to(dist_util.dev()) #  DEBUG **
-    # model.cuda() #  DEBUG **
+    model.cuda() #  DEBUG **
 
     pytorch_total_params = sum(p.numel() for p in model.parameters())
 

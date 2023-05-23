@@ -17,6 +17,7 @@ class myTokenizer():
     ################################################
     def __init__(self, args):
         if args.vocab == 'bert':
+            print(args.config_name)
             tokenizer = AutoTokenizer.from_pretrained(args.config_name)
             self.tokenizer = tokenizer
             self.sep_token_id = tokenizer.sep_token_id
@@ -81,7 +82,7 @@ def load_model_emb(args, tokenizer):
             print('initializing the random embeddings', model)
             torch.nn.init.normal_(model.weight)
             torch.save(model.state_dict(), path_save)
-            os.sync()
+            # os.sync() # ADD BY ME
             with open(path_save_ind, "x") as _:
                 pass
     else:
