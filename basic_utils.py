@@ -8,6 +8,12 @@ from diffuseq.gaussian_diffusion import SpacedDiffusion, space_timesteps
 from diffuseq.transformer_model import TransformerNetModel
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
+from tokenizers import Tokenizer
+from tokenizers.models import BPE
+from tokenizers.trainers import BpeTrainer
+from tokenizers.pre_tokenizers import Whitespace
+import pickle
+
 class myTokenizer():
     """
     Load tokenizer from bert config or defined BPE vocab dict
@@ -16,15 +22,43 @@ class myTokenizer():
     ### You can custome your own tokenizer here. ###
     ################################################
     def __init__(self, args):
+        # self.vocab_size = 7000
+        # try:
+        #     if args.test:
+        #         with open("checkpoint-path/tokenizer.pkl", 'rb') as f:
+        #             self.tokenizer = pickle.load(f)
+        #             self.vocab_size = len(self.tokenizer.get_vocab())
+        #             args.vocab_size = self.vocab_size  # update vocab size in args
+        #             self.sep_token_id = 2
+        #             self.pad_token_id = 3
+        #         print("successful loading !!")
+        #         return
+        # except:
+        #     print("TRAIN PHASE!")
         if args.vocab == 'bert':
             print(args.config_name)
-            tokenizer = AutoTokenizer.from_pretrained(args.config_name)
+            # tokenizer = AutoTokenizer.from_pretrained(args.config_name)
+            with open('./datasets/SparQL/src-english_train_split.txt', 'r', encoding='utf8') as f:
+                src = f.readlines()
+
+            tokenizer = Tokenizer(BPE(unk_token="[UNK]"))
+            trainer = BpeTrainer(special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]"], vocab_size=3602)
+            tokenizer.pre_tokenizer = Whitespace()
+            tokenizer.train_from_iterator([i.strip() for i in src], trainer)
+            print(len(tokenizer.get_vocab()))
+
             self.tokenizer = tokenizer
-            self.sep_token_id = tokenizer.sep_token_id
-            self.pad_token_id = tokenizer.pad_token_id
+
+            with open('./datasets/SparQL/spec-english_train_split.txt', 'r') as f:
+                data = f.read()
+
+            self.tokenizer.add_tokens(data.replace('\n', ' ').split(' '))
+            self.sep_token_id = 2
+            self.pad_token_id = 3
             # save
-            tokenizer.save_pretrained(args.checkpoint_path)
-        else: 
+            # with open("checkpoint-path/tokenizer.pkl", "wb") as f:
+            #     pickle.dump(self.tokenizer, f)
+        else:
             # load vocab from the path
             print('#'*30, 'load vocab from', args.vocab)
             vocab_dict = {'[START]': 0, '[END]': 1, '[UNK]':2, '[PAD]':3}
@@ -41,16 +75,14 @@ class myTokenizer():
                 with open(path_save_vocab, 'w') as f:
                     json.dump(vocab_dict, f)
                 
-        self.vocab_size = len(self.tokenizer)
+        self.vocab_size = len(self.tokenizer.get_vocab())
         args.vocab_size = self.vocab_size # update vocab size in args
     
     def encode_token(self, sentences):
         if isinstance(self.tokenizer, dict):
             input_ids = [[0] + [self.tokenizer.get(x, self.tokenizer['[UNK]']) for x in seq.split()] + [1] for seq in sentences]
-        elif isinstance(self.tokenizer, PreTrainedTokenizerFast):
-            input_ids = self.tokenizer(sentences, add_special_tokens=True)['input_ids']
         else:
-            assert False, "invalid type of vocab_dict"
+            input_ids = [i.ids for i in self.tokenizer.encode_batch(sentences, add_special_tokens=True)]
         return input_ids
         
     def decode_token(self, seq):
@@ -59,13 +91,11 @@ class myTokenizer():
             while len(seq)>0 and seq[-1] == self.pad_token_id:
                 seq.pop()
             tokens = " ".join([self.rev_tokenizer[x] for x in seq]).replace('__ ', '').replace('@@ ', '')
-        elif isinstance(self.tokenizer, PreTrainedTokenizerFast):
+        else:
             seq = seq.squeeze(-1).tolist()
             while len(seq)>0 and seq[-1] == self.pad_token_id:
                 seq.pop()
             tokens = self.tokenizer.decode(seq)
-        else:
-            assert False, "invalid type of vocab_dict"
         return tokens
 
 

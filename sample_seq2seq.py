@@ -29,8 +29,8 @@ from basic_utils import (
 )
 
 def create_argparser():
-    defaults = dict(model_path='./checkpoint-path/ema_0.999_099000.pt', step=2000, out_dir='', top_p=1)
-    decode_defaults = dict(split='test', clamp_step=0, seed2=105, clip_denoised=False)
+    defaults = dict(model_path='./checkpoint-path/ema_0.999_007000.pt', step=2000, out_dir='', top_p=1)
+    decode_defaults = dict(split='train', clamp_step=0, seed2=105, clip_denoised=False)
     defaults.update(load_defaults_config())
     defaults.update(decode_defaults)
     parser = argparse.ArgumentParser()
@@ -80,8 +80,9 @@ def main():
     print("### Sampling...on", args.split)
 
     ## load data
+    print(args.split)
     data_valid = load_data_text(
-        batch_size=4,
+        batch_size=16,
         seq_len=args.seq_len,
         deterministic=True,
         data_args=args,
@@ -108,11 +109,12 @@ def main():
 
     all_test_data = []
 
+    nofb = 0
     try:
         while True:
             batch, cond = next(data_valid)
-            # print(batch.shape)
             all_test_data.append(cond)
+
 
     except StopIteration:
         print('### End of reading iteration...')

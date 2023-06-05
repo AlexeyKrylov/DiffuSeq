@@ -552,7 +552,8 @@ class GaussianDiffusion:
         logits = get_logits(reshaped_x_t)  # bsz, seqlen, vocab
         # print(logits.shape)
         loss_fct = th.nn.CrossEntropyLoss(reduction='none')
-
+        # print("input_ids: ", input_ids.view(-1).long())
+        # print("predictions: ", logits.view(-1, logits.size(-1)).argmax(axis=-1))
         decoder_nll = loss_fct(logits.view(-1, logits.size(-1)), input_ids.view(-1).long()).view(input_ids.shape) ## ADD BY ME long
         if mask != None:
             decoder_nll *= mask

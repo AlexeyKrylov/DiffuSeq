@@ -73,9 +73,19 @@ class TransformerNetModel(nn.Module):
             print(config)
             temp_bert = BertModel.from_pretrained(config_name, config=config)
 
-            self.word_embedding = temp_bert.embeddings.word_embeddings
+
+            embedding_layer = temp_bert.embeddings.word_embeddings
+            old_num_tokens, old_embedding_dim = embedding_layer.weight.shape
+            new_embeddings = nn.Embedding(32955, old_embedding_dim)
+            raise ValueError
+            new_embeddings.to(embedding_layer.weight.device, dtype=embedding_layer.weight.dtype)
+            new_embeddings.weight.data[:old_num_tokens, :] = embedding_layer.weight.data[:old_num_tokens, :]
+
+            self.word_embedding = new_embeddings
+
             with th.no_grad():
                 self.lm_head.weight = self.word_embedding.weight
+
             # self.lm_head.weight.requires_grad = False
             # self.word_embedding.weight.requires_grad = False
             
