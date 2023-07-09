@@ -17,6 +17,8 @@ def load_data_text(
     split='train', 
     loaded_vocab=None,
     loop=True,
+    nofb=None,
+    nofs=None
 ):
     """
     For a dataset, create a generator over (seqs, kwargs) pairs.
@@ -36,7 +38,7 @@ def load_data_text(
 
     print('#'*30, '\nLoading text data...')
 
-    training_data = get_corpus(data_args, seq_len, split=split, loaded_vocab=loaded_vocab)
+    training_data = get_corpus(data_args, seq_len, split=split, loaded_vocab=loaded_vocab, nofs=nofs)
 
     dataset = TextDataset(
         training_data,
@@ -57,7 +59,13 @@ def load_data_text(
 
     else:
         # print(data_loader)
-        return iter(data_loader)
+        if nofb is None:
+            return iter(data_loader)
+        res_iter = list()
+        while nofb > 0:
+            nofb -= 1
+            res_iter.append(next(iter(data_loader)))
+        return iter(res_iter)
 
 def infinite_loader(data_loader):
     while True:
@@ -150,7 +158,10 @@ def helper_tokenize(sentence_lst, vocab_dict, seq_len):
     return raw_datasets
 
 
-def get_corpus(data_args, seq_len, split='train', loaded_vocab=None):
+def get_corpus(data_args, seq_len, split='train', loaded_vocab=None, nofs=None):
+
+    if nofs is None:
+        nofs = 999999
 
     print('#'*30, '\nLoading dataset {} from {}...'.format(data_args.dataset, data_args.data_dir))
 
@@ -172,6 +183,11 @@ def get_corpus(data_args, seq_len, split='train', loaded_vocab=None):
         for row in f_reader:
             sentence_lst['src'].append(json.loads(row)['src'].strip())
             sentence_lst['trg'].append(json.loads(row)['trg'].strip())
+
+            nofs -= 1
+
+            if nofs <= 0:
+                break
 
     print('### Data samples...\n', sentence_lst['src'][:2], sentence_lst['trg'][:2])
         

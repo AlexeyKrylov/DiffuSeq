@@ -71,13 +71,12 @@ class TransformerNetModel(nn.Module):
         if init_pretrained == 'bert':
             print('initializing from pretrained bert...')
             print(config)
-            temp_bert = BertModel.from_pretrained(config_name, config=config)
-
+            temp_bert = BertModel.from_pretrained("prajjwal1/bert-tiny")
 
             embedding_layer = temp_bert.embeddings.word_embeddings
             old_num_tokens, old_embedding_dim = embedding_layer.weight.shape
-            new_embeddings = nn.Embedding(32955, old_embedding_dim)
-            raise ValueError
+            new_embeddings = nn.Embedding(33913, old_embedding_dim)     # TODO
+
             new_embeddings.to(embedding_layer.weight.device, dtype=embedding_layer.weight.dtype)
             new_embeddings.weight.data[:old_num_tokens, :] = embedding_layer.weight.data[:old_num_tokens, :]
 
@@ -89,18 +88,22 @@ class TransformerNetModel(nn.Module):
             # self.lm_head.weight.requires_grad = False
             # self.word_embedding.weight.requires_grad = False
             
-            self.input_transformers = temp_bert.encoder
+            self.input_transformers = BertEncoder(config)
             self.register_buffer("position_ids", torch.arange(config.max_position_embeddings).expand((1, -1)))
-            self.position_embeddings = temp_bert.embeddings.position_embeddings
-            self.LayerNorm = temp_bert.embeddings.LayerNorm
+            # self.position_embeddings = temp_bert.embeddings.position_embeddings
+            self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
+            # self.LayerNorm = temp_bert.embeddings.LayerNorm
+            self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
             del temp_bert.embeddings
             del temp_bert.pooler
 
         elif init_pretrained == 'no':
+
             self.input_transformers = BertEncoder(config)
 
             self.register_buffer("position_ids", torch.arange(config.max_position_embeddings).expand((1, -1)))
+
             self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
             self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         
@@ -142,7 +145,10 @@ class TransformerNetModel(nn.Module):
         :param timesteps: a 1-D batch of timesteps.
         :return: an [N x C x ...] Tensor of outputs.
         """
-        emb_t = self.time_embed(timestep_embedding(timesteps, self.hidden_t_dim))
+        kind_of_type = x.dtype
+        emb_t_0 = timestep_embedding(timesteps, self.hidden_t_dim)
+        emb_t_0 = emb_t_0.to(kind_of_type)
+        emb_t = self.time_embed(emb_t_0)
 
         if self.input_dims != self.hidden_size:
             emb_x = self.input_up_proj(x)
@@ -152,6 +158,7 @@ class TransformerNetModel(nn.Module):
         seq_length = x.size(1)
         position_ids = self.position_ids[:, : seq_length ]
         # print(emb_x.shape, emb_t.shape, self.position_embeddings)
+
         emb_inputs = self.position_embeddings(position_ids) + emb_x + emb_t.unsqueeze(1).expand(-1, seq_length, -1)
         emb_inputs = self.dropout(self.LayerNorm(emb_inputs))
 

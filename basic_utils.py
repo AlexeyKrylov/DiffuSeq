@@ -37,14 +37,14 @@ class myTokenizer():
         #     print("TRAIN PHASE!")
         if args.vocab == 'bert':
             print(args.config_name)
-            # tokenizer = AutoTokenizer.from_pretrained(args.config_name)
-            with open('./datasets/SparQL/src-english_train_split.txt', 'r', encoding='utf8') as f:
-                src = f.readlines()
-
-            tokenizer = Tokenizer(BPE(unk_token="[UNK]"))
-            trainer = BpeTrainer(special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]"], vocab_size=3602)
-            tokenizer.pre_tokenizer = Whitespace()
-            tokenizer.train_from_iterator([i.strip() for i in src], trainer)
+            tokenizer = AutoTokenizer.from_pretrained("prajjwal1/bert-tiny")
+            # with open('./datasets/SparQL/src-english_train_split.txt', 'r', encoding='utf8') as f:
+            #     src = f.readlines()
+            #
+            # tokenizer = Tokenizer(BPE(unk_token="[UNK]"))
+            # trainer = BpeTrainer(special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]"], vocab_size=3602)
+            # tokenizer.pre_tokenizer = Whitespace()
+            # tokenizer.train_from_iterator([i.strip() for i in src], trainer)
             print(len(tokenizer.get_vocab()))
 
             self.tokenizer = tokenizer
@@ -82,7 +82,8 @@ class myTokenizer():
         if isinstance(self.tokenizer, dict):
             input_ids = [[0] + [self.tokenizer.get(x, self.tokenizer['[UNK]']) for x in seq.split()] + [1] for seq in sentences]
         else:
-            input_ids = [i.ids for i in self.tokenizer.encode_batch(sentences, add_special_tokens=True)]
+            # input_ids = [i.ids for i in self.tokenizer.encode_batch(sentences, add_special_tokens=True)]
+            input_ids = self.tokenizer(sentences, add_special_tokens=True)['input_ids']
         return input_ids
         
     def decode_token(self, seq):
@@ -111,6 +112,8 @@ def load_model_emb(args, tokenizer):
         else:
             print('initializing the random embeddings', model)
             torch.nn.init.normal_(model.weight)
+            if not os.path.exists('/'.join(path_save.split('/')[:-1])):
+                os.mkdir('/'.join(path_save.split('/')[:-1]))
             torch.save(model.state_dict(), path_save)
             # os.sync() # ADD BY ME
             with open(path_save_ind, "x") as _:

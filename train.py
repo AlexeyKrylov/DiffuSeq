@@ -60,7 +60,9 @@ def main():
     #     split='valid',
     #     deterministic=True,
     #     loaded_vocab=tokenizer,
-    #     model_emb=model_weight  # using the same embedding wight with tranining data
+    #     model_emb=model_weight,  # using the same embedding wight with tranining data
+    #     nofb=4,
+    #     nofs=4*args.microbatch
     # )
     data_valid = load_data_text(
         batch_size=args.batch_size,
@@ -69,7 +71,9 @@ def main():
         split='valid',
         deterministic=True,
         loaded_vocab=tokenizer,
-        model_emb=model_weight # using the same embedding wight with tranining data
+        model_emb=model_weight, # using the same embedding wight with tranining data
+        # nofb=4,
+        # nofs=4 * args.microbatch
     )
 
     next(data_valid)
@@ -80,6 +84,9 @@ def main():
     model, diffusion = create_model_and_diffusion(
         **args_to_dict(args, load_defaults_config().keys())
     )
+    # model.load_state_dict(
+    #     dist_util.load_state_dict(args.resume_checkpoint, map_location="cpu")
+    # )
     print('#'*30, 'cuda', dist_util.dev())
     model.to(dist_util.dev()) #  DEBUG **
     model.cuda() #  DEBUG **
@@ -113,6 +120,7 @@ def main():
         log_interval=args.log_interval,
         save_interval=args.save_interval,
         resume_checkpoint=args.resume_checkpoint,
+        resume_step=args.resume_step,
         use_fp16=args.use_fp16,
         fp16_scale_growth=args.fp16_scale_growth,
         schedule_sampler=schedule_sampler,

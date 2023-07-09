@@ -18,6 +18,8 @@ from diffuseq.utils.fp16_util import (
     unflatten_master_params,
     zero_grad,
 )
+
+from sample_seq2seq import sample_for_train
 from diffuseq.utils.nn import update_ema
 from diffuseq.step_sample import LossAwareSampler, UniformSampler
 
@@ -41,6 +43,7 @@ class TrainLoop:
         log_interval,
         save_interval,
         resume_checkpoint,
+        resume_step,
         use_fp16=False,
         fp16_scale_growth=1e-3,
         schedule_sampler=None,
@@ -76,6 +79,10 @@ class TrainLoop:
 
         self.step = 0
         self.resume_step = 0
+
+        if resume_checkpoint != 'no':
+            self.resume_step = resume_step
+
         self.global_batch = self.batch_size * dist.get_world_size()
 
         self.model_params = list(self.model.parameters())
@@ -104,6 +111,10 @@ class TrainLoop:
             self.ema_params = [
                 copy.deepcopy(self.master_params) for _ in range(len(self.ema_rate))
             ]
+        print("First EMA sum: ", sum([i.sum() for i in self.ema_params[0]]).item())
+        print("First MASTER sum: ", sum([i.sum() for i in self.master_params]).item())
+
+
 
         if th.cuda.is_available(): # DEBUG **
             self.use_ddp = True
@@ -167,7 +178,8 @@ class TrainLoop:
 
     def _setup_fp16(self):
         self.master_params = make_master_params(self.model_params)
-        self.model.convert_to_fp16()
+        # self.model.convert_to_fp16()
+        self.model = self.model.half()
 
     def run_loop(self):
         while (
@@ -177,12 +189,16 @@ class TrainLoop:
             batch, cond = next(self.data)
             # print("batch: ", batch)
             # print("cond: ", cond)
+            if self.use_fp16:
+                batch = batch.half()
 
             self.run_step(batch, cond)
             if self.step % self.log_interval == 0:
                 logger.dumpkvs()
             if self.eval_data is not None and self.step % self.eval_interval == 0:
                 batch_eval, cond_eval = next(self.eval_data)
+                if self.use_fp16:
+                    batch_eval = batch_eval.half()
                 self.forward_only(batch_eval, cond_eval)
                 print('eval on validation set')
                 logger.dumpkvs()
@@ -292,6 +308,7 @@ class TrainLoop:
         for rate, params in zip(self.ema_rate, self.ema_params):
             update_ema(params, self.master_params, rate=rate)
         master_params_to_model_params(self.model_params, self.master_params)
+
         self.lg_loss_scale += self.fp16_scale_growth
 
     def grad_clip(self):
@@ -318,8 +335,12 @@ class TrainLoop:
         self._log_grad_norm()
         self._anneal_lr()
         self.opt.step()
+        # print(self.master_params)
         for rate, params in zip(self.ema_rate, self.ema_params):
             update_ema(params, self.master_params, rate=rate)
+        # print(self.master_params)
+        print("EMA sum: ", sum([i.sum() for i in self.ema_params[0]]).item())
+        print("MASTER sum: ", sum([i.sum() for i in self.master_params]).item())
 
     def _log_grad_norm(self):
         sqsum = 0.0
@@ -362,10 +383,20 @@ class TrainLoop:
                 with bf.BlobFile(bf.join(self.checkpoint_path, filename), "wb") as f: # DEBUG **
                     th.save(state_dict, f) # save locally
                     # pass # save empty
+            return bf.join(self.checkpoint_path, filename)
 
-        # save_checkpoint(0, self.master_params)
+        path = save_checkpoint(0, self.master_params)
+
         for rate, params in zip(self.ema_rate, self.ema_params):
             save_checkpoint(rate, params)
+
+        score_train = sample_for_train('train', path)
+        score_valid = sample_for_train('valid', path)
+
+        logger.logkv("exact_match", score_train)
+        logger.logkv("eval_exact_match", score_valid)
+
+        logger.dumpkvs()
 
         dist.barrier()
 
