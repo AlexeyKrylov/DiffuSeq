@@ -116,10 +116,12 @@ def helper_tokenize(sentence_lst, vocab_dict, seq_len):
             trg.append(end_token)
 
             lst.append(src + [vocab_dict.sep_token_id] + trg)
-            mask.append([0]*(len(src)+1))
+            # mask.append([0]*(len(src)+1))
+            mask.append([0] * (seq_len // 2))
         group_lst['input_ids'] = lst
         group_lst['input_mask'] = mask
-        print(max([len(i) for i in lst]))
+        print("MAX FULL SIZE: ", max([len(i) for i in lst]))
+        print("MAX Y SIZE: ", seq_len - max([len(i) for i in mask]))
         return group_lst
     
     tokenized_datasets = tokenized_datasets.map(
@@ -131,8 +133,11 @@ def helper_tokenize(sentence_lst, vocab_dict, seq_len):
     
     def pad_function(group_lst):
         max_length = seq_len
-        group_lst['input_ids'] = _collate_batch_helper(group_lst['input_ids'], vocab_dict.pad_token_id, max_length)
+        group_lst['input_ids'] = _collate_batch_helper(group_lst['input_ids'][:len(group_lst['input_mask'])], vocab_dict.pad_token_id, max_length // 2) \
+                                 + _collate_batch_helper(group_lst['input_id_y'], vocab_dict.pad_token_id, max_length // 2)
+        group_lst['input_ids'] = [group_lst['input_ids'][i] + group_lst['input_ids'][i+len(group_lst['input_ids']) // 2] for i in range(len(group_lst['input_ids']) // 2)]
         group_lst['input_mask'] = _collate_batch_helper(group_lst['input_mask'], 1, max_length)
+        group_lst['input_ids_y'] = _collate_batch_helper(group_lst['input_id_y'], vocab_dict.pad_token_id, max_length // 2)
         return group_lst
 
     print(f"RAM used: {psutil.Process().memory_info().rss / (1024 * 1024):.2f} MB")
@@ -221,6 +226,7 @@ class TextDataset(Dataset):
             out_kwargs = {}
             out_kwargs['input_ids'] = np.array(self.text_datasets['train'][idx]['input_ids'])
             out_kwargs['input_mask'] = np.array(self.text_datasets['train'][idx]['input_mask'])
+            out_kwargs['input_ids_y'] = np.array(self.text_datasets['train'][idx]['input_ids_y'])
 
             return arr, out_kwargs
 

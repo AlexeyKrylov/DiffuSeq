@@ -337,16 +337,16 @@ class GaussianDiffusion:
             )
 
         model_mean, _, _ = self.q_posterior_mean_variance(
-            x_start=pred_xstart, x_t=x, t=t, type=type
+            x_start=pred_xstart, x_t=x[:, pred_xstart.shape[1]:, :], t=t, type=type
         )
 
-        assert (
-            model_mean.shape == model_log_variance.shape == pred_xstart.shape == x.shape
-        )
+        # assert (
+        #     model_mean.shape == model_log_variance.shape == pred_xstart.shape == x.shape
+        # )
         return {
             "mean": model_mean,
-            "variance": model_variance,
-            "log_variance": model_log_variance,
+            "variance": model_variance[:, pred_xstart.shape[1]:, :],
+            "log_variance": model_log_variance[:, pred_xstart.shape[1]:, :],
             "pred_xstart": pred_xstart,
         }
 
@@ -379,9 +379,11 @@ class GaussianDiffusion:
             model_kwargs=model_kwargs,
             type=type
         )
+
+
         if top_p is not None and top_p > 0:
             # print('top_p sampling')
-            noise = th.randn_like(x)
+            noise = th.randn_like(x[:, out['pred_xstart'].shape[1]:, :])
             replace_mask = th.abs(noise) > top_p
             while replace_mask.any():
                 noise[replace_mask] = th.randn_like(noise[replace_mask])
@@ -523,12 +525,12 @@ class GaussianDiffusion:
                     denoised_fn=denoised_fn_cur,
                     model_kwargs=model_kwargs,
                     top_p=top_p,
-                    mask=mask,
+                    mask=None,
                     x_start=x_start,
                     type=x_start.dtype
                 )
                 yield out
-                sample_x = out["sample"].to(x_start.dtype)
+                sample_x = th.concat([sample_x[:, :out["sample"].shape[1], :], out["sample"].to(x_start.dtype)], axis=1)
 
 
     def _get_x_start(self, x_start_mean, std, type):
@@ -556,7 +558,7 @@ class GaussianDiffusion:
         loss_fct = th.nn.CrossEntropyLoss(reduction='none')
         # print("input_ids: ", input_ids.view(-1).long())
         # print("predictions: ", logits.view(-1, logits.size(-1)).argmax(axis=-1))
-        decoder_nll = loss_fct(logits.view(-1, logits.size(-1)), input_ids.view(-1).long()).view(input_ids.shape) ## ADD BY ME long
+        decoder_nll = loss_fct(logits.view(-1, logits.size(-1)), input_ids.long().reshape(-1)).view(input_ids.shape) ## ADD BY ME long
         if mask != None:
             decoder_nll *= mask
         # print(decoder_nll.shape)
@@ -571,9 +573,9 @@ class GaussianDiffusion:
 
         if self.predict_xstart:
             pred_xstart = model_output
-            pred_prev, _, _ = self.q_posterior_mean_variance(
-                x_start=pred_xstart, x_t=x, t=t, type=type
-            )
+            # pred_prev, _, _ = self.q_posterior_mean_variance(
+            #     x_start=pred_xstart, x_t=x, t=t, type=type
+            # )
 
         else: # predict eps
             pred_xstart = self._predict_xstart_from_eps(x_t=x, t=t, eps=model_output)
@@ -581,8 +583,8 @@ class GaussianDiffusion:
             pred_prev, _, _ = self.q_posterior_mean_variance(
                 x_start=pred_xstart, x_t=x, t=t, type=type
             )
-
-        return {'pred_xprev':pred_prev, 'pred_xstart':pred_xstart}
+        return {'pred_xstart':pred_xstart}
+        # return {'pred_xprev':pred_prev, 'pred_xstart':pred_xstart}
 
     def training_losses_seq2seq(self, model, x_start, t, model_kwargs=None, noise=None):
         """
@@ -629,23 +631,25 @@ class GaussianDiffusion:
 
         target = x_start
         model_output = model(x_t, self._scale_timesteps(t), **model_kwargs)
-        assert model_output.shape == target.shape == x_start.shape
-        terms["mse"] = mean_flat((target - model_output) ** 2)
+        # assert model_output.shape == target.shape == x_start.shape
+        terms["mse"] = mean_flat((target[:, :model_output.shape[1], :] - model_output) ** 2)
 
         model_out_x_start = self._x0_helper(model_output, x_t, t, kind_of_type)['pred_xstart'] # predicted_xstart = model_output
         t0_mask = (t == 0)
-        t0_loss = mean_flat((x_start_mean - model_out_x_start) ** 2)
+        t0_loss = mean_flat((x_start_mean[:, model_output.shape[1]:, :] - model_out_x_start) ** 2)
         terms["mse"] = th.where(t0_mask, t0_loss, terms["mse"])
 
         # tT_mask = (t == self.num_timesteps - 1)
         out_mean, _, _ = self.q_mean_variance(x_start, th.LongTensor([self.num_timesteps - 1]).to(x_start.device), kind_of_type)
-        tT_loss =  mean_flat(out_mean ** 2)
+        tT_loss = mean_flat(out_mean ** 2)
 
         decoder_nll = self._token_discrete_loss(x_start, get_logits, input_ids_x) # embedding regularization
-        terms["nll"] = self._token_discrete_loss(model_out_x_start, get_logits, input_ids_x, mask=input_ids_mask, truncate=True, t=t) # x_0->model_out_x_start
-        # assert (model.lm_head.weight == model.word_embedding.weight).all()
+        terms["nll"] = self._token_discrete_loss(model_out_x_start, get_logits, input_ids_x[:, model_output.shape[1]:], mask=None, truncate=True, t=t) # x_0->model_out_x_start
+        assert (model.model.module.lm_head.weight == model.model.module.word_embedding.weight).all()
 
-        terms["loss"] = terms["mse"] + decoder_nll + tT_loss
+        # print(decoder_nll)
+        # terms["loss"] = terms["mse"] + decoder_nll + tT_loss
+        terms["loss"] = terms["mse"] + terms["nll"] + tT_loss
 
         return terms
 

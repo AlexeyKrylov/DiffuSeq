@@ -6,7 +6,7 @@ import time
 from diffuseq import gaussian_diffusion as gd
 from diffuseq.gaussian_diffusion import SpacedDiffusion, space_timesteps
 from diffuseq.transformer_model import TransformerNetModel
-from transformers import AutoTokenizer, PreTrainedTokenizerFast
+from transformers import AutoTokenizer, PreTrainedTokenizerFast, T5Tokenizer
 
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
@@ -58,6 +58,19 @@ class myTokenizer():
             # save
             # with open("checkpoint-path/tokenizer.pkl", "wb") as f:
             #     pickle.dump(self.tokenizer, f)
+        elif args.vocab == 't5':
+            print(args.config_name)
+            tokenizer = T5Tokenizer.from_pretrained(args.config_name)
+            print(len(tokenizer.get_vocab()))
+
+            self.tokenizer = tokenizer
+
+            with open('./datasets/SparQL/spec-english_train_split.txt', 'r') as f:
+                data = f.read()
+
+            self.tokenizer.add_tokens(data.replace('\n', ' ').split(' '))
+            self.sep_token_id = 1
+            self.pad_token_id = 0
         else:
             # load vocab from the path
             print('#'*30, 'load vocab from', args.vocab)

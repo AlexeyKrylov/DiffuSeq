@@ -31,7 +31,7 @@ from basic_utils import (
 
 
 def create_argparser(sample='test', path='./checkpoint-path/ema_0.9999_004000.pt'):
-    defaults = dict(model_path=path, step=2000, out_dir='', top_p=1)
+    defaults = dict(model_path=path, step=200, out_dir='', top_p=1)
     # defaults = dict(model_path='./checkpoint-path/ema_0.9999_004000.pt', step=2000, out_dir='', top_p=1)
     # defaults = dict(model_path='./checkpoint-path/model004000.pt', step=2000, out_dir='', top_p=1)
 
@@ -237,7 +237,7 @@ def sample_for_train(sample='test', path='./'):
     logger.configure()
 
     # load configurations.
-    config_path = "./checkpoint-path/Test/training_args.json"
+    config_path = "./checkpoint-path/TestT5/training_args.json"
     print(config_path)
     import sys
     # sys.setdefaultencoding('utf-8')
