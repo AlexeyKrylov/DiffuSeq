@@ -23,8 +23,10 @@ import wandb
 ### custom your wandb setting here ###
 os.environ["WANDB_API_KEY"] = "11f51a2ea2a41b8b79f0ebc544208a24a8ff6cab"
 os.environ["WANDB_MODE"] = "online"
-
+# os.environ['TORCH_DISTRIBUTED_DEBUG'] = 'DETAIL'
 os.environ["PL_TORCH_DISTRIBUTED_BACKEND"] = "gloo"
+# os.environ['TORCH_CPP_LOG_LEVEL'] = 'INFO'
+
 
 def create_argparser():
     defaults = dict()
@@ -44,26 +46,26 @@ def main():
     tokenizer = load_tokenizer(args)
     model_weight, tokenizer = load_model_emb(args, tokenizer)
 
-    data = load_data_text(
-        batch_size=args.batch_size,
-        seq_len=args.seq_len,
-        data_args = args,
-        loaded_vocab=tokenizer,
-        model_emb=model_weight # use model's weights as init
-    )
-    next(data)
-
     # data = load_data_text(
     #     batch_size=args.batch_size,
     #     seq_len=args.seq_len,
-    #     data_args=args,
-    #     split='valid',
-    #     deterministic=True,
+    #     data_args = args,
     #     loaded_vocab=tokenizer,
-    #     model_emb=model_weight,  # using the same embedding wight with tranining data
-    #     nofb=4,
-    #     nofs=4*args.microbatch
+    #     model_emb=model_weight # use model's weights as init
     # )
+    # next(data)
+
+    data = load_data_text(
+        batch_size=args.batch_size,
+        seq_len=args.seq_len,
+        data_args=args,
+        split='valid',
+        deterministic=True,
+        loaded_vocab=tokenizer,
+        model_emb=model_weight,  # using the same embedding wight with tranining data
+        nofb=4,
+        nofs=4*args.microbatch
+    )
     data_valid = load_data_text(
         batch_size=args.batch_size,
         seq_len=args.seq_len,
@@ -72,8 +74,8 @@ def main():
         deterministic=True,
         loaded_vocab=tokenizer,
         model_emb=model_weight, # using the same embedding wight with tranining data
-        # nofb=4,
-        # nofs=4 * args.microbatch
+        nofb=4,
+        nofs=4 * args.microbatch
     )
 
     next(data_valid)
@@ -84,11 +86,13 @@ def main():
     model, diffusion = create_model_and_diffusion(
         **args_to_dict(args, load_defaults_config().keys())
     )
+
     # model.load_state_dict(
     #     dist_util.load_state_dict(args.resume_checkpoint, map_location="cpu")
     # )
     print('#'*30, 'cuda', dist_util.dev())
-    model.to(dist_util.dev()) #  DEBUG **
+    # model.to(dist_util.dev()) #  DEBUG **
+
     model.cuda() #  DEBUG **
 
     pytorch_total_params = sum(p.numel() for p in model.parameters())
@@ -108,6 +112,9 @@ def main():
         wandb.config.update(args.__dict__, allow_val_change=True)
 
     logger.log("### Training...")
+
+    for name, param in model.named_parameters():
+        print(name, param.data.shape)
 
     TrainLoop(
         model=model,

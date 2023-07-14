@@ -98,13 +98,15 @@ def helper_tokenize(sentence_lst, vocab_dict, seq_len):
     print(f"RAM used: {psutil.Process().memory_info().rss / (1024 * 1024):.2f} MB")
 
     def merge_and_mask(group_lst):
+        src_l = []
+        trg_l = []
         lst = []
         mask = []
         for i in range(len(group_lst['input_id_x'])):
             end_token = group_lst['input_id_x'][i][-1]
             src = group_lst['input_id_x'][i][:-1]
             trg = group_lst['input_id_y'][i][:-1]
-            while len(src) + len(trg) > seq_len - 3:
+            while len(src) + len(trg) > seq_len - 2:
                 if len(src)>len(trg):
                     src.pop()
                 elif len(src)<len(trg):
@@ -116,10 +118,16 @@ def helper_tokenize(sentence_lst, vocab_dict, seq_len):
             trg.append(end_token)
 
             lst.append(src + [vocab_dict.sep_token_id] + trg)
-            mask.append([0]*(len(src)+1))
+            src_l.append(src)
+            trg_l.append(trg)
+            # mask.append([0]*(len(src)+1))
+            mask.append([0] * (seq_len // 2))
+        group_lst['input_ids_x'] = src_l
+        group_lst['input_ids_y'] = trg_l
         group_lst['input_ids'] = lst
         group_lst['input_mask'] = mask
-        print(max([len(i) for i in lst]))
+        print("MAX X SIZE: ", max([len(i) for i in src_l]))
+        print("MAX Y SIZE: ", max([len(i) for i in trg_l]))
         return group_lst
     
     tokenized_datasets = tokenized_datasets.map(
@@ -131,8 +139,15 @@ def helper_tokenize(sentence_lst, vocab_dict, seq_len):
     
     def pad_function(group_lst):
         max_length = seq_len
-        group_lst['input_ids'] = _collate_batch_helper(group_lst['input_ids'], vocab_dict.pad_token_id, max_length)
+        # group_lst['input_ids'] = _collate_batch_helper(group_lst['input_ids'], vocab_dict.pad_token_id, max_length)
+        group_lst['input_ids'] = _collate_batch_helper(group_lst['input_ids_x'], vocab_dict.pad_token_id, max_length // 2) \
+                                 + _collate_batch_helper(group_lst['input_ids_y'], vocab_dict.pad_token_id, max_length // 2)
+        group_lst['input_ids'] = [group_lst['input_ids'][i] + group_lst['input_ids'][i+len(group_lst['input_ids']) // 2] for i in range(len(group_lst['input_ids']) // 2)]
         group_lst['input_mask'] = _collate_batch_helper(group_lst['input_mask'], 1, max_length)
+
+        del group_lst['input_ids_x']
+        del group_lst['input_ids_y']
+
         return group_lst
 
     print(f"RAM used: {psutil.Process().memory_info().rss / (1024 * 1024):.2f} MB")

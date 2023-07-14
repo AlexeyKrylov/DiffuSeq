@@ -237,7 +237,7 @@ def sample_for_train(sample='test', path='./'):
     logger.configure()
 
     # load configurations.
-    config_path = "./checkpoint-path/Test/training_args.json"
+    config_path = "./checkpoint-path/TestT5-v2/training_args.json"
     print(config_path)
     import sys
     # sys.setdefaultencoding('utf-8')

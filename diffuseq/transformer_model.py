@@ -2,6 +2,7 @@ from transformers import AutoConfig
 # from transformers import BertEncoder
 from transformers.models.bert.modeling_bert import BertEncoder, BertModel
 import torch
+from transformers import T5ForConditionalGeneration
 
 import numpy as np
 import torch as th
@@ -54,6 +55,7 @@ class TransformerNetModel(nn.Module):
 
         self.word_embedding = nn.Embedding(vocab_size, self.input_dims)
         self.lm_head = nn.Linear(self.input_dims, vocab_size)
+
         with th.no_grad():
             self.lm_head.weight = self.word_embedding.weight
 
@@ -106,7 +108,12 @@ class TransformerNetModel(nn.Module):
 
             self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
             self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-        
+
+        elif init_pretrained == 'T5':
+            self.input_transformers = T5ForConditionalGeneration.from_pretrained(config_name)
+            # self.input_transformers.resize_token_embeddings(35584)
+
+            self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=1e-12)
         else:
             assert False, "invalid type of init_pretrained"
         
@@ -156,17 +163,45 @@ class TransformerNetModel(nn.Module):
             emb_x = x
 
         seq_length = x.size(1)
-        position_ids = self.position_ids[:, : seq_length ]
+        position_ids = self.position_ids[:, : seq_length]
         # print(emb_x.shape, emb_t.shape, self.position_embeddings)
 
         emb_inputs = self.position_embeddings(position_ids) + emb_x + emb_t.unsqueeze(1).expand(-1, seq_length, -1)
         emb_inputs = self.dropout(self.LayerNorm(emb_inputs))
 
         input_trans_hidden_states = self.input_transformers(emb_inputs).last_hidden_state
-        
+
         if self.output_dims != self.hidden_size:
             h = self.output_down_proj(input_trans_hidden_states)
         else:
             h = input_trans_hidden_states
         h = h.type(x.dtype)
         return h
+
+        # seq_length = x.size(1)
+        #
+        # emb_inputs = emb_x + emb_t.unsqueeze(1).expand(-1, seq_length, -1)
+        #
+        # emb_inputs = self.dropout(self.LayerNorm(emb_inputs))
+        #
+        #
+        # emb_inputs_1, emb_inputs_2 = emb_inputs.chunk(2, dim=1)
+        #
+        # hidden_states = self.input_transformers.encoder(
+        #     inputs_embeds=emb_inputs_1
+        # )[0]
+        #
+        #
+        # decoder_outputs = self.input_transformers.decoder(
+        #     inputs_embeds=emb_inputs_2,
+        #     encoder_hidden_states=hidden_states
+        # )[0]
+        #
+        # # input_trans_hidden_states = self.input_transformers(emb_inputs).last_hidden_state
+        # input_trans_hidden_states = torch.concat([hidden_states, decoder_outputs], axis=1)
+        # if self.output_dims != self.hidden_size:
+        #     h = self.output_down_proj(input_trans_hidden_states)
+        # else:
+        #     h = input_trans_hidden_states
+        # h = h.type(x.dtype)
+        # return h

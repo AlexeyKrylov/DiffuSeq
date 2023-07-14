@@ -14,6 +14,7 @@ import sys
 sys.path.append('.')
 
 import torch.nn.functional as F
+from torch.utils.tensorboard import SummaryWriter
 
 from .utils.nn import mean_flat
 from .utils.losses import normal_kl, discretized_gaussian_log_likelihood
@@ -597,7 +598,9 @@ class GaussianDiffusion:
         :return: a dict with the key "loss" containing a tensor of shape [N].
                  Some mean or variance settings may also have other keys.
         """
-        x_start_fix = x_start # save the orignal x_0
+        # train_writer = SummaryWriter('./logs/train')
+
+        # x_start_fix = x_start # save the orignal x_0
         assert 'input_ids' in model_kwargs
 
         kind_of_type = x_start.dtype
@@ -628,6 +631,8 @@ class GaussianDiffusion:
         terms = {}
 
         target = x_start
+        # train_writer.add_graph(model.model, (x_t, self._scale_timesteps(t)), **model_kwargs)
+        # raise ValueError
         model_output = model(x_t, self._scale_timesteps(t), **model_kwargs)
         assert model_output.shape == target.shape == x_start.shape
         terms["mse"] = mean_flat((target - model_output) ** 2)
@@ -644,6 +649,7 @@ class GaussianDiffusion:
         decoder_nll = self._token_discrete_loss(x_start, get_logits, input_ids_x) # embedding regularization
         terms["nll"] = self._token_discrete_loss(model_out_x_start, get_logits, input_ids_x, mask=input_ids_mask, truncate=True, t=t) # x_0->model_out_x_start
         # assert (model.lm_head.weight == model.word_embedding.weight).all()
+        # terms["nll"] = 0
 
         terms["loss"] = terms["mse"] + decoder_nll + tT_loss
 

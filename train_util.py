@@ -125,7 +125,7 @@ class TrainLoop:
                 output_device=dist_util.dev(),
                 broadcast_buffers=False,
                 bucket_cap_mb=128,
-                find_unused_parameters=False,
+                find_unused_parameters=True,
             )
         else:
             if dist.get_world_size() > 1:
@@ -390,10 +390,10 @@ class TrainLoop:
         for rate, params in zip(self.ema_rate, self.ema_params):
             save_checkpoint(rate, params)
 
-        score_train = sample_for_train('train', path)
+        # score_train = sample_for_train('train', path)
         score_valid = sample_for_train('valid', path)
 
-        logger.logkv("exact_match", score_train)
+        # logger.logkv("exact_match", score_train)
         logger.logkv("eval_exact_match", score_valid)
 
         logger.dumpkvs()
