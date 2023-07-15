@@ -6,7 +6,7 @@ import time
 from diffuseq import gaussian_diffusion as gd
 from diffuseq.gaussian_diffusion import SpacedDiffusion, space_timesteps
 from diffuseq.transformer_model import TransformerNetModel
-from transformers import AutoTokenizer, PreTrainedTokenizerFast
+from transformers import AutoTokenizer, PreTrainedTokenizerFast, T5Tokenizer
 
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
@@ -14,10 +14,12 @@ from tokenizers.trainers import BpeTrainer
 from tokenizers.pre_tokenizers import Whitespace
 import pickle
 
+
 class myTokenizer():
     """
     Load tokenizer from bert config or defined BPE vocab dict
     """
+
     ################################################
     ### You can custome your own tokenizer here. ###
     ################################################
@@ -58,10 +60,24 @@ class myTokenizer():
             # save
             # with open("checkpoint-path/tokenizer.pkl", "wb") as f:
             #     pickle.dump(self.tokenizer, f)
+        elif args.vocab == 't5':
+            print(args.config_name)
+            tokenizer = T5Tokenizer.from_pretrained(args.config_name)
+            print(len(tokenizer.get_vocab()))
+            print(list(tokenizer.get_vocab().items())[:2])
+
+            self.tokenizer = tokenizer
+
+            with open('./datasets/SparQL/spec-english_train_split.txt', 'r') as f:
+                data = f.read()
+
+            self.tokenizer.add_tokens(data.replace('\n', ' ').split(' '))
+            self.sep_token_id = 1
+            self.pad_token_id = 0
         else:
             # load vocab from the path
-            print('#'*30, 'load vocab from', args.vocab)
-            vocab_dict = {'[START]': 0, '[END]': 1, '[UNK]':2, '[PAD]':3}
+            print('#' * 30, 'load vocab from', args.vocab)
+            vocab_dict = {'[START]': 0, '[END]': 1, '[UNK]': 2, '[PAD]': 3}
             with open(args.vocab, 'r', encoding='utf-8') as f:
                 for row in f:
                     vocab_dict[row.strip().split(' ')[0]] = len(vocab_dict)
@@ -74,27 +90,28 @@ class myTokenizer():
                 path_save_vocab = f'{args.checkpoint_path}/vocab.json'
                 with open(path_save_vocab, 'w') as f:
                     json.dump(vocab_dict, f)
-                
+
         self.vocab_size = len(self.tokenizer.get_vocab())
-        args.vocab_size = self.vocab_size # update vocab size in args
-    
+        args.vocab_size = self.vocab_size  # update vocab size in args
+
     def encode_token(self, sentences):
         if isinstance(self.tokenizer, dict):
-            input_ids = [[0] + [self.tokenizer.get(x, self.tokenizer['[UNK]']) for x in seq.split()] + [1] for seq in sentences]
+            input_ids = [[0] + [self.tokenizer.get(x, self.tokenizer['[UNK]']) for x in seq.split()] + [1] for seq in
+                         sentences]
         else:
             # input_ids = [i.ids for i in self.tokenizer.encode_batch(sentences, add_special_tokens=True)]
-            input_ids = self.tokenizer(sentences, add_special_tokens=True)['input_ids']
+            input_ids = self.tokenizer(sentences, add_special_tokens=True, padding='max_length', max_length=64)['input_ids']
         return input_ids
-        
+
     def decode_token(self, seq):
         if isinstance(self.tokenizer, dict):
             seq = seq.squeeze(-1).tolist()
-            while len(seq)>0 and seq[-1] == self.pad_token_id:
+            while len(seq) > 0 and seq[-1] == self.pad_token_id:
                 seq.pop()
             tokens = " ".join([self.rev_tokenizer[x] for x in seq]).replace('__ ', '').replace('@@ ', '')
         else:
             seq = seq.squeeze(-1).tolist()
-            while len(seq)>0 and seq[-1] == self.pad_token_id:
+            while len(seq) > 0 and seq[-1] == self.pad_token_id:
                 seq.pop()
             tokens = self.tokenizer.decode(seq)
         return tokens
@@ -131,6 +148,7 @@ def load_tokenizer(args):
     tokenizer = myTokenizer(args)
     return tokenizer
 
+
 def load_defaults_config():
     """
     Load defaults for training args.
@@ -140,27 +158,27 @@ def load_defaults_config():
 
 
 def create_model_and_diffusion(
-    hidden_t_dim,
-    hidden_dim,
-    vocab_size,
-    config_name,
-    use_plm_init,
-    dropout,
-    diffusion_steps,
-    noise_schedule,
-    learn_sigma,
-    timestep_respacing,
-    predict_xstart,
-    rescale_timesteps,
-    sigma_small,
-    rescale_learned_sigmas,
-    use_kl,
-    notes,
-    **kwargs,
+        hidden_t_dim,
+        hidden_dim,
+        vocab_size,
+        config_name,
+        use_plm_init,
+        dropout,
+        diffusion_steps,
+        noise_schedule,
+        learn_sigma,
+        timestep_respacing,
+        predict_xstart,
+        rescale_timesteps,
+        sigma_small,
+        rescale_learned_sigmas,
+        use_kl,
+        notes,
+        **kwargs,
 ):
     model = TransformerNetModel(
         input_dims=hidden_dim,
-        output_dims=(hidden_dim if not learn_sigma else hidden_dim*2),
+        output_dims=(hidden_dim if not learn_sigma else hidden_dim * 2),
         hidden_t_dim=hidden_t_dim,
         dropout=dropout,
         config_name=config_name,
@@ -178,9 +196,9 @@ def create_model_and_diffusion(
         betas=betas,
         rescale_timesteps=rescale_timesteps,
         predict_xstart=predict_xstart,
-        learn_sigmas = learn_sigma,
-        sigma_small = sigma_small,
-        use_kl = use_kl,
+        learn_sigmas=learn_sigma,
+        sigma_small=sigma_small,
+        use_kl=use_kl,
         rescale_learned_sigmas=rescale_learned_sigmas
     )
 

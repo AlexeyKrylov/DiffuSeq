@@ -44,13 +44,13 @@ def create_argparser(sample='test', path='./checkpoint-path/ema_0.9999_004000.pt
 
 
 def main():
-    args = create_argparser('test').parse_args()
+    args = create_argparser('test', './checkpoint-path/T5-base/ema_0.999_050000.pt').parse_args()
 
     dist_util.setup_dist()
     logger.configure()
 
     # load configurations.
-    config_path = "./checkpoint-path/training_args.json"
+    config_path = "./checkpoint-path/T5-base/training_args.json"
     print(config_path)
     import sys
     # sys.setdefaultencoding('utf-8')
@@ -94,13 +94,15 @@ def main():
     ## load data
     print(args.split)
     data_valid = load_data_text(
-        batch_size=16,
+        batch_size=8,
         seq_len=args.seq_len,
         deterministic=True,
         data_args=args,
         split=args.split,
         loaded_vocab=tokenizer,        model_emb=model_emb.cpu(), # using the same embedding wight with tranining data
-        loop=False
+        loop=False,
+        # nofb=4,
+        # nofs=32
     )
 
     start_t = time.time()
@@ -109,15 +111,15 @@ def main():
     # print(batch.shape)
 
     model_base_name = os.path.split(args.model_path)[0] + f'.{os.path.split(args.model_path)[1]}'
-    # out_dir = os.path.join(args.out_dir, f"{model_base_name.split('.ema')[0]}")
-    out_dir = os.path.join(args.out_dir, f"checkpoint-path")
+    out_dir = os.path.join(args.out_dir, f"{model_base_name.split('.ema')[0]}")
+    # out_dir = os.path.join(args.out_dir, f"checkpoint-path")
 
     print("out_dir: ", out_dir)
     if not os.path.isdir(out_dir):
         os.mkdir(out_dir)
 
-    # out_path = os.path.join(out_dir, f"ema{model_base_name.split('.ema')[1]}.samples")
-    out_path = os.path.join(out_dir, f"model04000.samples")
+    out_path = os.path.join(out_dir, f"ema{model_base_name.split('.ema')[1]}.samples")
+    # out_path = os.path.join(out_dir, f"TestT5-v2\model010000.samples")
     print(out_path)
     if not os.path.isdir(out_path):
         os.mkdir(out_path)
@@ -230,14 +232,14 @@ def main():
     print(f'### Written the decoded output to {out_path}')
 
 
-def sample_for_train(sample='test', path='./'):
+def sample_for_train(model, sample='test', path='./'):
     args = create_argparser(sample, path).parse_args()
 
     dist_util.setup_dist()
     logger.configure()
 
     # load configurations.
-    config_path = "./checkpoint-path/Test/training_args.json"
+    config_path = "./checkpoint-path/TestT5-v2/training_args.json"
     print(config_path)
     import sys
     # sys.setdefaultencoding('utf-8')
@@ -247,13 +249,13 @@ def sample_for_train(sample='test', path='./'):
     args.__dict__.update(training_args)
 
     logger.log("### Creating model and diffusion...")
-    model, diffusion = create_model_and_diffusion(
+    _, diffusion = create_model_and_diffusion(
         **args_to_dict(args, load_defaults_config().keys())
     )
 
-    model.load_state_dict(
-        dist_util.load_state_dict(args.model_path, map_location="cuda:0")
-    )
+    # model.load_state_dict(
+    #     dist_util.load_state_dict(args.model_path, map_location="cuda:0")
+    # )
 
     pytorch_total_params = sum(p.numel() for p in model.parameters())
     logger.log(f'### The parameter count is {pytorch_total_params}')

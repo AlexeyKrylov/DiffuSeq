@@ -8,17 +8,18 @@ import psutil
 import datasets
 from datasets import Dataset as Dataset2
 
+
 def load_data_text(
-    batch_size, 
-    seq_len, 
-    deterministic=False, 
-    data_args=None, 
-    model_emb=None,
-    split='train', 
-    loaded_vocab=None,
-    loop=True,
-    nofb=None,
-    nofs=None
+        batch_size,
+        seq_len,
+        deterministic=False,
+        data_args=None,
+        model_emb=None,
+        split='train',
+        loaded_vocab=None,
+        loop=True,
+        nofb=None,
+        nofs=None
 ):
     """
     For a dataset, create a generator over (seqs, kwargs) pairs.
@@ -36,7 +37,7 @@ def load_data_text(
     :param loop: loop to get batch data or not.
     """
 
-    print('#'*30, '\nLoading text data...')
+    print('#' * 30, '\nLoading text data...')
 
     training_data = get_corpus(data_args, seq_len, split=split, loaded_vocab=loaded_vocab, nofs=nofs)
 
@@ -67,9 +68,11 @@ def load_data_text(
             res_iter.append(next(iter(data_loader)))
         return iter(res_iter)
 
+
 def infinite_loader(data_loader):
     while True:
         yield from data_loader
+
 
 def helper_tokenize(sentence_lst, vocab_dict, seq_len):
     # Process.memory_info is expressed in bytes, so convert to megabytes
@@ -98,75 +101,48 @@ def helper_tokenize(sentence_lst, vocab_dict, seq_len):
     print(f"RAM used: {psutil.Process().memory_info().rss / (1024 * 1024):.2f} MB")
 
     def merge_and_mask(group_lst):
-        lst = []
-        mask = []
-        for i in range(len(group_lst['input_id_x'])):
-            end_token = group_lst['input_id_x'][i][-1]
-            src = group_lst['input_id_x'][i][:-1]
-            trg = group_lst['input_id_y'][i][:-1]
-            while len(src) + len(trg) > seq_len - 3:
-                if len(src)>len(trg):
-                    src.pop()
-                elif len(src)<len(trg):
-                    trg.pop()
-                else:
-                    src.pop()
-                    trg.pop()
-            src.append(end_token)
-            trg.append(end_token)
-
-            lst.append(src + [vocab_dict.sep_token_id] + trg)
-            mask.append([0]*(len(src)+1))
-        group_lst['input_ids'] = lst
+        mask = [[0] * (seq_len // 2) + [1] * (seq_len // 2) for i in range(len(group_lst['input_id_x']))]
+        group_lst['input_ids_x'] = group_lst['input_id_x']
+        group_lst['input_ids_y'] = group_lst['input_id_y']
+        group_lst['input_ids'] = [i+j for i, j in zip(group_lst['input_id_x'], group_lst['input_id_y'])]
         group_lst['input_mask'] = mask
-        print(max([len(i) for i in lst]))
+        print("MAX X SIZE: ", max([sum(np.array(i) != 0) for i in group_lst['input_ids_x']]))
+        print("MAX Y SIZE: ", max([sum(np.array(i) != 0) for i in group_lst['input_ids_y']]))
+
+        del group_lst['input_id_x']
+        del group_lst['input_id_y']
+
         return group_lst
-    
+
     tokenized_datasets = tokenized_datasets.map(
         merge_and_mask,
         batched=True,
         num_proc=1,
         desc=f"merge and mask",
     )
-    
-    def pad_function(group_lst):
-        max_length = seq_len
-        group_lst['input_ids'] = _collate_batch_helper(group_lst['input_ids'], vocab_dict.pad_token_id, max_length)
-        group_lst['input_mask'] = _collate_batch_helper(group_lst['input_mask'], 1, max_length)
-        return group_lst
 
-    print(f"RAM used: {psutil.Process().memory_info().rss / (1024 * 1024):.2f} MB")
-
-    lm_datasets = tokenized_datasets.map(
-        pad_function,
-        batched=True,
-        num_proc=1,
-        desc=f"padding",
-    )
-
-    print(lm_datasets, 'padded dataset')
-    print('### tokenized_datasets...example X', lm_datasets['input_id_x'][0])
-    print('### tokenized_datasets...example Y', lm_datasets['input_id_y'][0])
-    print('### tokenized_datasets...example ids', lm_datasets['input_ids'][0])
-    print('### tokenized_datasets...example mask', lm_datasets['input_mask'][0])
+    print(tokenized_datasets, 'padded dataset')
+    print('### tokenized_datasets...example X', tokenized_datasets['input_ids_x'][0])
+    print('### tokenized_datasets...example Y', tokenized_datasets['input_ids_y'][0])
+    print('### tokenized_datasets...example ids', tokenized_datasets['input_ids'][0])
+    print('### tokenized_datasets...example mask', tokenized_datasets['input_mask'][0])
 
     print(f"RAM used: {psutil.Process().memory_info().rss / (1024 * 1024):.2f} MB")
 
     raw_datasets = datasets.DatasetDict()
-    raw_datasets['train'] = lm_datasets
+    raw_datasets['train'] = tokenized_datasets
     print(f"RAM used: {psutil.Process().memory_info().rss / (1024 * 1024):.2f} MB")
     return raw_datasets
 
 
 def get_corpus(data_args, seq_len, split='train', loaded_vocab=None, nofs=None):
-
     if nofs is None:
         nofs = 999999
 
-    print('#'*30, '\nLoading dataset {} from {}...'.format(data_args.dataset, data_args.data_dir))
+    print('#' * 30, '\nLoading dataset {} from {}...'.format(data_args.dataset, data_args.data_dir))
 
-    sentence_lst = {'src':[], 'trg': []}
-    
+    sentence_lst = {'src': [], 'trg': []}
+
     if split == 'train':
         print('### Loading form the TRAIN set...')
         path = f'{data_args.data_dir}/train.jsonl'
@@ -190,7 +166,7 @@ def get_corpus(data_args, seq_len, split='train', loaded_vocab=None, nofs=None):
                 break
 
     print('### Data samples...\n', sentence_lst['src'][:2], sentence_lst['trg'][:2])
-        
+
     # get tokenizer.
     vocab_dict = loaded_vocab
 
@@ -211,7 +187,6 @@ class TextDataset(Dataset):
 
     def __getitem__(self, idx):
         with torch.no_grad():
-
             input_ids = self.text_datasets['train'][idx]['input_ids']
             hidden_state = self.model_emb(torch.tensor(input_ids))
 
@@ -223,6 +198,7 @@ class TextDataset(Dataset):
             out_kwargs['input_mask'] = np.array(self.text_datasets['train'][idx]['input_mask'])
 
             return arr, out_kwargs
+
 
 def _collate_batch_helper(examples, pad_token_id, max_length, return_mask=False):
     result = torch.full([len(examples), max_length], pad_token_id, dtype=torch.int64).tolist()

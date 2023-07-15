@@ -1,7 +1,7 @@
 import copy
 import functools
 import os
-
+import gc
 import blobfile as bf
 import numpy as np
 import torch as th
@@ -111,8 +111,8 @@ class TrainLoop:
             self.ema_params = [
                 copy.deepcopy(self.master_params) for _ in range(len(self.ema_rate))
             ]
-        print("First EMA sum: ", sum([i.sum() for i in self.ema_params[0]]).item())
-        print("First MASTER sum: ", sum([i.sum() for i in self.master_params]).item())
+        # print("First EMA sum: ", sum([i.sum() for i in self.ema_params[0]]).item())
+        # print("First MASTER sum: ", sum([i.sum() for i in self.master_params]).item())
 
 
 
@@ -181,7 +181,25 @@ class TrainLoop:
         # self.model.convert_to_fp16()
         self.model = self.model.half()
 
+
+
     def run_loop(self):
+
+        # import torch
+        # import gc
+        # for obj in gc.get_objects():
+        #     try:
+        #         if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
+        #             if str(obj.dtype) == 'torch.float32':
+        #                 print(obj.dtype, obj.flatten().size())
+        #                 del obj
+        #                 torch.cuda.empty_cache()
+        #                 gc.collect()
+        #
+        #     except:
+        #         pass
+
+
         while (
             not self.learning_steps
             or self.step + self.resume_step < self.learning_steps
@@ -390,11 +408,11 @@ class TrainLoop:
         for rate, params in zip(self.ema_rate, self.ema_params):
             save_checkpoint(rate, params)
 
-        score_train = sample_for_train('train', path)
-        score_valid = sample_for_train('valid', path)
+        # score_train = sample_for_train(self.model, 'train', path)
+        # score_valid = sample_for_train(self.model, 'valid', path)
 
-        logger.logkv("exact_match", score_train)
-        logger.logkv("eval_exact_match", score_valid)
+        # logger.logkv("exact_match", score_train)
+        # logger.logkv("eval_exact_match", score_valid)
 
         logger.dumpkvs()
 

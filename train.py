@@ -64,6 +64,7 @@ def main():
     #     nofb=4,
     #     nofs=4*args.microbatch
     # )
+
     data_valid = load_data_text(
         batch_size=args.batch_size,
         seq_len=args.seq_len,
@@ -84,6 +85,7 @@ def main():
     model, diffusion = create_model_and_diffusion(
         **args_to_dict(args, load_defaults_config().keys())
     )
+
     # model.load_state_dict(
     #     dist_util.load_state_dict(args.resume_checkpoint, map_location="cpu")
     # )
