@@ -44,7 +44,7 @@ def create_argparser(sample='test', path='./checkpoint-path/ema_0.9999_004000.pt
 
 
 def main():
-    args = create_argparser('test', './checkpoint-path/T5-base/ema_0.999_050000.pt').parse_args()
+    args = create_argparser('test', './checkpoint-path/T5-base/model012000.pt').parse_args()
 
     dist_util.setup_dist()
     logger.configure()
@@ -71,11 +71,10 @@ def main():
     pytorch_total_params = sum(p.numel() for p in model.parameters())
     logger.log(f'### The parameter count is {pytorch_total_params}')
 
-    model.to(dist_util.dev())
-    model.eval()
-
     if args.use_fp16:
         model = model.half()
+    model.to(dist_util.dev())
+    model.eval()
 
     tokenizer = load_tokenizer(args)
     model_emb, tokenizer = load_model_emb(args, tokenizer)
@@ -101,8 +100,8 @@ def main():
         split=args.split,
         loaded_vocab=tokenizer,        model_emb=model_emb.cpu(), # using the same embedding wight with tranining data
         loop=False,
-        # nofb=4,
-        # nofs=32
+        nofb=72,
+        nofs=576
     )
 
     start_t = time.time()
@@ -111,15 +110,15 @@ def main():
     # print(batch.shape)
 
     model_base_name = os.path.split(args.model_path)[0] + f'.{os.path.split(args.model_path)[1]}'
-    out_dir = os.path.join(args.out_dir, f"{model_base_name.split('.ema')[0]}")
-    # out_dir = os.path.join(args.out_dir, f"checkpoint-path")
+    # out_dir = os.path.join(args.out_dir, f"{model_base_name.split('.ema')[0]}")
+    out_dir = os.path.join(args.out_dir, f"checkpoint-path")
 
     print("out_dir: ", out_dir)
     if not os.path.isdir(out_dir):
         os.mkdir(out_dir)
 
-    out_path = os.path.join(out_dir, f"ema{model_base_name.split('.ema')[1]}.samples")
-    # out_path = os.path.join(out_dir, f"TestT5-v2\model010000.samples")
+    # out_path = os.path.join(out_dir, f"ema{model_base_name.split('.ema')[1]}.samples")
+    out_path = os.path.join(out_dir, f"T5-base\model012000.samples")
     print(out_path)
     if not os.path.isdir(out_path):
         os.mkdir(out_path)
@@ -132,7 +131,7 @@ def main():
     try:
         # while nofb < 8:
         while True:
-            batch, cond = next(data_valid)
+            cond = next(data_valid)
             all_test_data.append(cond)
             nofb += 1
 

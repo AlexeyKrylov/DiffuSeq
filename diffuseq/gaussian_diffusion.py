@@ -584,7 +584,7 @@ class GaussianDiffusion:
 
         return {'pred_xprev':pred_prev, 'pred_xstart':pred_xstart}
 
-    def training_losses_seq2seq(self, model, x_start, t, model_kwargs=None, noise=None):
+    def training_losses_seq2seq(self, model, t, model_kwargs=None, noise=None):
         """
         Compute training losses for a single timestep.
 
@@ -597,10 +597,10 @@ class GaussianDiffusion:
         :return: a dict with the key "loss" containing a tensor of shape [N].
                  Some mean or variance settings may also have other keys.
         """
-        x_start_fix = x_start # save the orignal x_0
+        # x_start_fix = x_start # save the orignal x_0
         assert 'input_ids' in model_kwargs
 
-        kind_of_type = x_start.dtype
+        kind_of_type = next(model.model.module.parameters()).dtype
         input_ids_x = model_kwargs.pop('input_ids').to(t.device)
         input_ids_mask = model_kwargs.pop('input_mask').to(t.device)
         x_start_mean = model.model.module.get_embeds(input_ids_x)
@@ -630,16 +630,16 @@ class GaussianDiffusion:
         target = x_start
         model_output = model(x_t, self._scale_timesteps(t), **model_kwargs)
         assert model_output.shape == target.shape == x_start.shape
-        terms["mse"] = mean_flat((target[:, (target.shape[1] // 2):, :] - model_output[:, (model_output.shape[1] // 2):, :]) ** 2)
+        terms["mse"] = mean_flat((target - model_output) ** 2)
 
         model_out_x_start = self._x0_helper(model_output, x_t, t, kind_of_type)['pred_xstart'] # predicted_xstart = model_output
         t0_mask = (t == 0)
-        t0_loss = mean_flat((x_start_mean[:, (x_start_mean.shape[1] // 2):, :] - model_out_x_start[:, (model_out_x_start.shape[1] // 2):, :]) ** 2)
+        t0_loss = mean_flat((x_start_mean - model_out_x_start) ** 2)
         terms["mse"] = th.where(t0_mask, t0_loss, terms["mse"])
 
         # tT_mask = (t == self.num_timesteps - 1)
         out_mean, _, _ = self.q_mean_variance(x_start, th.LongTensor([self.num_timesteps - 1]).to(x_start.device), kind_of_type)
-        tT_loss =  mean_flat(out_mean ** 2)
+        tT_loss = mean_flat(out_mean ** 2)
 
         decoder_nll = self._token_discrete_loss(x_start, get_logits, input_ids_x) # embedding regularization
         terms["nll"] = self._token_discrete_loss(model_out_x_start, get_logits, input_ids_x, mask=input_ids_mask, truncate=True, t=t) # x_0->model_out_x_start

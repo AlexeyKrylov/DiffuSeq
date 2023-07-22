@@ -9,7 +9,7 @@ import torch.distributed as dist
 from torch.nn.parallel.distributed import DistributedDataParallel as DDP
 from torch.optim import AdamW
 import io
-
+from torch._utils import _flatten_dense_tensors
 from diffuseq.utils import dist_util, logger
 from diffuseq.utils.fp16_util import (
     make_master_params,
@@ -18,6 +18,8 @@ from diffuseq.utils.fp16_util import (
     unflatten_master_params,
     zero_grad,
 )
+from transformers.optimization import Adafactor
+import torch.nn as nn
 
 from sample_seq2seq import sample_for_train
 from diffuseq.utils.nn import update_ema
@@ -97,11 +99,13 @@ class TrainLoop:
             self._setup_fp16()
 
         self.opt = AdamW(self.master_params, lr=self.lr, weight_decay=self.weight_decay)
+        # self.opt = Adafactor(self.master_params, lr=self.lr, relative_step=False, weight_decay=self.weight_decay)
         if self.resume_step:
             # self._load_optimizer_state()
             frac_done = (self.step + self.resume_step) / self.learning_steps
             lr = self.lr * (1 - frac_done)
-            self.opt = AdamW(self.master_params, lr=lr, weight_decay=self.weight_decay)
+            # self.opt = AdamW(self.master_params, lr=lr, weight_decay=self.weight_decay)
+            self.opt = Adafactor(self.master_params, lr=lr, relative_step=False, weight_decay=self.weight_decay)
             # Model was resumed, either due to a restart or a checkpoint
             # being specified at the command line.
             self.ema_params = [
@@ -178,8 +182,9 @@ class TrainLoop:
 
     def _setup_fp16(self):
         self.master_params = make_master_params(self.model_params)
+        th.cuda.empty_cache()
         # self.model.convert_to_fp16()
-        self.model = self.model.half()
+        # self.model = self.model.half()
 
 
 
@@ -204,20 +209,22 @@ class TrainLoop:
             not self.learning_steps
             or self.step + self.resume_step < self.learning_steps
         ):
-            batch, cond = next(self.data)
+            # batch, cond = next(self.data)
+            cond = next(self.data)
             # print("batch: ", batch)
             # print("cond: ", cond)
-            if self.use_fp16:
-                batch = batch.half()
+            # if self.use_fp16:
+            #     batch = batch.half()
 
-            self.run_step(batch, cond)
+            # self.run_step(batch, cond)
+            self.run_step(cond)
             if self.step % self.log_interval == 0:
                 logger.dumpkvs()
             if self.eval_data is not None and self.step % self.eval_interval == 0:
-                batch_eval, cond_eval = next(self.eval_data)
-                if self.use_fp16:
-                    batch_eval = batch_eval.half()
-                self.forward_only(batch_eval, cond_eval)
+                cond_eval = next(self.eval_data)
+                # if self.use_fp16:
+                #     batch_eval = batch_eval.half()
+                self.forward_only(cond_eval)
                 print('eval on validation set')
                 logger.dumpkvs()
             if self.step > 0 and self.step % self.save_interval == 0:
@@ -230,30 +237,29 @@ class TrainLoop:
         if (self.step - 1) % self.save_interval != 0:
             self.save()
 
-    def run_step(self, batch, cond):
-        self.forward_backward(batch, cond)
+    def run_step(self, cond):
+        self.forward_backward(cond)
         if self.use_fp16:
             self.optimize_fp16()
         else:
             self.optimize_normal()
         self.log_step()
 
-    def forward_only(self, batch, cond):
+    def forward_only(self, cond):
         with th.no_grad():
             zero_grad(self.model_params)
-            for i in range(0, batch.shape[0], self.microbatch):
-                micro = batch[i: i + self.microbatch].to(dist_util.dev())
+            for i in range(0, cond['input_ids'].shape[0], self.microbatch):
+                # micro = batch[i: i + self.microbatch].to(dist_util.dev())
                 micro_cond = {
                     k: v[i: i + self.microbatch].to(dist_util.dev())
                     for k, v in cond.items()
                 }
-                last_batch = (i + self.microbatch) >= batch.shape[0]
-                t, weights = self.schedule_sampler.sample(micro.shape[0], dist_util.dev())
+                last_batch = (i + self.microbatch) >= cond['input_ids'].shape[0]
+                t, weights = self.schedule_sampler.sample(micro_cond['input_ids'].shape[0], dist_util.dev())
                 # print(micro_cond.keys())
                 compute_losses = functools.partial(
                     self.diffusion.training_losses,
                     self.ddp_model,
-                    micro,
                     t,
                     model_kwargs=micro_cond,
                 )
@@ -269,16 +275,16 @@ class TrainLoop:
                 )
 
 
-    def forward_backward(self, batch, cond):
+    def forward_backward(self, cond):
         zero_grad(self.model_params)
-        for i in range(0, batch.shape[0], self.microbatch):
-            micro = batch[i : i + self.microbatch].to(dist_util.dev())
+        for i in range(0, cond['input_ids'].shape[0], self.microbatch):
+            # micro = batch[i : i + self.microbatch].to(dist_util.dev())
             micro_cond = {
                 k: v[i : i + self.microbatch].to(dist_util.dev())
                 for k, v in cond.items()
             }
-            last_batch = (i + self.microbatch) >= batch.shape[0]
-            t, weights = self.schedule_sampler.sample(micro.shape[0], dist_util.dev())
+            last_batch = (i + self.microbatch) >= cond['input_ids'].shape[0]
+            t, weights = self.schedule_sampler.sample(micro_cond['input_ids'].shape[0], dist_util.dev())
             # print("t: ", t)
             # print("weights: ", weights)
 
@@ -286,7 +292,6 @@ class TrainLoop:
             compute_losses = functools.partial(
                 self.diffusion.training_losses,
                 self.ddp_model,
-                micro,
                 t,
                 model_kwargs=micro_cond,
             )
@@ -319,14 +324,17 @@ class TrainLoop:
             return
 
         model_grads_to_master_grads(self.model_params, self.master_params)
+        th.cuda.empty_cache()
         self.master_params[0].grad.mul_(1.0 / (2 ** self.lg_loss_scale))
         self._log_grad_norm()
+        th.cuda.empty_cache()
         self._anneal_lr()
         self.opt.step()
+        th.cuda.empty_cache()
         for rate, params in zip(self.ema_rate, self.ema_params):
             update_ema(params, self.master_params, rate=rate)
+        th.cuda.empty_cache()
         master_params_to_model_params(self.model_params, self.master_params)
-
         self.lg_loss_scale += self.fp16_scale_growth
 
     def grad_clip(self):
@@ -357,8 +365,8 @@ class TrainLoop:
         for rate, params in zip(self.ema_rate, self.ema_params):
             update_ema(params, self.master_params, rate=rate)
         # print(self.master_params)
-        print("EMA sum: ", sum([i.sum() for i in self.ema_params[0]]).item())
-        print("MASTER sum: ", sum([i.sum() for i in self.master_params]).item())
+        # print("EMA sum: ", sum([i.sum() for i in self.ema_params[0]]).item())
+        # print("MASTER sum: ", sum([i.sum() for i in self.master_params]).item())
 
     def _log_grad_norm(self):
         sqsum = 0.0

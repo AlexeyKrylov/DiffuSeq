@@ -55,8 +55,9 @@ class myTokenizer():
                 data = f.read()
 
             self.tokenizer.add_tokens(data.replace('\n', ' ').split(' '))
-            self.sep_token_id = 2
-            self.pad_token_id = 3
+            print(list(sorted(tokenizer.get_vocab().items(), key=lambda x : x[1])[:200]))
+            self.sep_token_id = 102
+            self.pad_token_id = 0
             # save
             # with open("checkpoint-path/tokenizer.pkl", "wb") as f:
             #     pickle.dump(self.tokenizer, f)
@@ -100,7 +101,7 @@ class myTokenizer():
                          sentences]
         else:
             # input_ids = [i.ids for i in self.tokenizer.encode_batch(sentences, add_special_tokens=True)]
-            input_ids = self.tokenizer(sentences, add_special_tokens=True, padding='max_length', max_length=64)['input_ids']
+            input_ids = self.tokenizer(sentences, add_special_tokens=True, padding='max_length', max_length=47)['input_ids']
         return input_ids
 
     def decode_token(self, seq):

@@ -4,7 +4,6 @@ Train a diffusion model on images.
 
 import argparse
 import json, torch, os
-import numpy as np
 from diffuseq.utils import dist_util, logger
 from diffuseq.text_datasets import load_data_text
 from diffuseq.step_sample import create_named_schedule_sampler
@@ -42,14 +41,13 @@ def main():
     logger.log("### Creating data loader...")
 
     tokenizer = load_tokenizer(args)
-    model_weight, tokenizer = load_model_emb(args, tokenizer)
+    # model_weight, tokenizer = load_model_emb(args, tokenizer)
 
     data = load_data_text(
         batch_size=args.batch_size,
         seq_len=args.seq_len,
-        data_args = args,
+        data_args=args,
         loaded_vocab=tokenizer,
-        model_emb=model_weight # use model's weights as init
     )
     next(data)
 
@@ -60,7 +58,6 @@ def main():
     #     split='valid',
     #     deterministic=True,
     #     loaded_vocab=tokenizer,
-    #     model_emb=model_weight,  # using the same embedding wight with tranining data
     #     nofb=4,
     #     nofs=4*args.microbatch
     # )
@@ -72,9 +69,8 @@ def main():
         split='valid',
         deterministic=True,
         loaded_vocab=tokenizer,
-        model_emb=model_weight, # using the same embedding wight with tranining data
         # nofb=4,
-        # nofs=4 * args.microbatch
+        # nofs=4*args.microbatch
     )
 
     next(data_valid)
@@ -90,8 +86,12 @@ def main():
     #     dist_util.load_state_dict(args.resume_checkpoint, map_location="cpu")
     # )
     print('#'*30, 'cuda', dist_util.dev())
+
+    if args.use_fp16:
+        model = model.half()
+
     model.to(dist_util.dev()) #  DEBUG **
-    model.cuda() #  DEBUG **
+    # model.cuda() #  DEBUG **
 
     pytorch_total_params = sum(p.numel() for p in model.parameters())
 
