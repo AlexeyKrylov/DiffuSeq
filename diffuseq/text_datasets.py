@@ -63,9 +63,11 @@ def load_data_text(
         if nofb is None:
             return iter(data_loader)
         res_iter = list()
-        while nofb > 0:
+        for tmp in iter(data_loader):
             nofb -= 1
-            res_iter.append(next(iter(data_loader)))
+            res_iter.append(tmp)
+            if nofb == 0:
+                break
         return iter(res_iter)
 
 

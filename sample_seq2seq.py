@@ -43,15 +43,15 @@ def create_argparser(sample='test', path='./checkpoint-path/ema_0.9999_004000.pt
     return parser
 
 
-def main():
-    args = create_argparser('test', './checkpoint-path/T5-base/model012000.pt').parse_args()
+def main(kk):
+    args = create_argparser('test', f'./checkpoint-path/T5-base/model0{kk}.pt').parse_args()
 
     dist_util.setup_dist()
     logger.configure()
 
     # load configurations.
     config_path = "./checkpoint-path/T5-base/training_args.json"
-    print(config_path)
+    # print(config_path)
     import sys
     # sys.setdefaultencoding('utf-8')
     with open(config_path, 'rb', ) as f:
@@ -88,19 +88,19 @@ def main():
 
     set_seed(args.seed2)
 
-    print("### Sampling...on", args.split)
+    # print("### Sampling...on", args.split)
 
     ## load data
-    print(args.split)
+    # print(args.split)
     data_valid = load_data_text(
-        batch_size=8,
+        batch_size=64,
         seq_len=args.seq_len,
         deterministic=True,
         data_args=args,
         split=args.split,
         loaded_vocab=tokenizer,        model_emb=model_emb.cpu(), # using the same embedding wight with tranining data
         loop=False,
-        nofb=72,
+        nofb=9,
         nofs=576
     )
 
@@ -118,7 +118,7 @@ def main():
         os.mkdir(out_dir)
 
     # out_path = os.path.join(out_dir, f"ema{model_base_name.split('.ema')[1]}.samples")
-    out_path = os.path.join(out_dir, f"T5-base\model012000.samples")
+    out_path = os.path.join(out_dir, f"T5-base/model0{kk}.samples")
     print(out_path)
     if not os.path.isdir(out_path):
         os.mkdir(out_path)
@@ -139,6 +139,7 @@ def main():
     except StopIteration:
         print('### End of reading iteration...')
 
+    score = 0
     for cond in tqdm(all_test_data):
 
         input_ids_x = cond.pop('input_ids').to(dist_util.dev())
@@ -184,14 +185,14 @@ def main():
         )
 
         model_emb_copy.cpu()
-        # print(samples[0].shape) # samples for each step
+        print(samples[0].shape) # samples for each step
 
         sample = samples[-1]
         gathered_samples = [th.zeros_like(sample) for _ in range(dist.get_world_size())]
         dist.all_gather(gathered_samples, sample)
         all_sentence = [sample.cpu().numpy() for sample in gathered_samples]
 
-        # print('sampling takes {:.2f}s .....'.format(time.time() - start_t))
+        print('sampling takes {:.2f}s .....'.format(time.time() - start_t))
 
         word_lst_recover = []
         word_lst_ref = []
@@ -200,8 +201,8 @@ def main():
 
         arr = np.concatenate(all_sentence, axis=0)
         x_t = th.tensor(arr).cuda()
-        # print('decoding for seq2seq', )
-        # print(arr.shape)
+        print('decoding for seq2seq', )
+        print(arr.shape)
 
         reshaped_x_t = x_t.to(x_start.dtype)
         logits = model.get_logits(reshaped_x_t)  # bsz, seqlen, vocab
@@ -223,10 +224,12 @@ def main():
 
         fout = open(out_path, 'a')
         for (recov, ref, src) in zip(word_lst_recover, word_lst_ref, word_lst_source):
+            score += (recov == ref)
             print(json.dumps({"recover": recov, "reference": ref, "source": src}))
             print(json.dumps({"recover": recov, "reference": ref, "source": src}), file=fout)
         fout.close()
-
+        print(score)
+    print(kk, " ---- ", score)
     print('### Total takes {:.2f}s .....'.format(time.time() - start_t))
     print(f'### Written the decoded output to {out_path}')
 
@@ -379,4 +382,6 @@ def sample_for_train(model, sample='test', path='./'):
     return score / (nofb * args.microbatch)
 
 if __name__ == "__main__":
-    main()
+    for k in [50000]:
+        main(k)
+        break
