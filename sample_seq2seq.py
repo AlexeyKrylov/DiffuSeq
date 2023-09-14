@@ -30,7 +30,7 @@ from basic_utils import (
 )
 
 
-def create_argparser(sample='test', path='./checkpoint-path/ema_0.9999_004000.pt'):
+def create_argparser(sample='test', path='./checkpoint-path/model0010000.pt'):
     defaults = dict(model_path=path, step=2000, out_dir='', top_p=1)
     # defaults = dict(model_path='./checkpoint-path/ema_0.9999_004000.pt', step=2000, out_dir='', top_p=1)
     # defaults = dict(model_path='./checkpoint-path/model004000.pt', step=2000, out_dir='', top_p=1)
@@ -43,14 +43,14 @@ def create_argparser(sample='test', path='./checkpoint-path/ema_0.9999_004000.pt
     return parser
 
 
-def main():
-    args = create_argparser('test').parse_args()
+def main(kk):
+    args = create_argparser('test', path=f'./checkpoint-path/Deberta/ema_0.9999_0{kk}.pt').parse_args()
 
     dist_util.setup_dist()
     logger.configure()
 
     # load configurations.
-    config_path = "./checkpoint-path/training_args.json"
+    config_path = "./checkpoint-path/Deberta/training_args.json"
     print(config_path)
     import sys
     # sys.setdefaultencoding('utf-8')
@@ -94,7 +94,7 @@ def main():
     ## load data
     print(args.split)
     data_valid = load_data_text(
-        batch_size=16,
+        batch_size=64,
         seq_len=args.seq_len,
         deterministic=True,
         data_args=args,
@@ -116,8 +116,8 @@ def main():
     if not os.path.isdir(out_dir):
         os.mkdir(out_dir)
 
-    # out_path = os.path.join(out_dir, f"ema{model_base_name.split('.ema')[1]}.samples")
-    out_path = os.path.join(out_dir, f"model04000.samples")
+    out_path = os.path.join(out_dir, f"ema{model_base_name.split('.ema')[1]}.samples")
+    # out_path = os.path.join(out_dir, f"model04000.samples")
     print(out_path)
     if not os.path.isdir(out_path):
         os.mkdir(out_path)
@@ -128,8 +128,8 @@ def main():
 
     nofb = 0
     try:
-        # while nofb < 8:
-        while True:
+        while nofb < 9:
+        # while True:
             batch, cond = next(data_valid)
             all_test_data.append(cond)
             nofb += 1
@@ -138,6 +138,7 @@ def main():
     except StopIteration:
         print('### End of reading iteration...')
 
+    score = 0
     for cond in tqdm(all_test_data):
 
         input_ids_x = cond.pop('input_ids').to(dist_util.dev())
@@ -222,10 +223,12 @@ def main():
 
         fout = open(out_path, 'a')
         for (recov, ref, src) in zip(word_lst_recover, word_lst_ref, word_lst_source):
+            score += (recov == ref)
             print(json.dumps({"recover": recov, "reference": ref, "source": src}))
             print(json.dumps({"recover": recov, "reference": ref, "source": src}), file=fout)
         fout.close()
-
+        print(score)
+    print(score)
     print('### Total takes {:.2f}s .....'.format(time.time() - start_t))
     print(f'### Written the decoded output to {out_path}')
 
@@ -378,4 +381,4 @@ def sample_for_train(sample='test', path='./'):
     return score / (nofb * args.microbatch)
 
 if __name__ == "__main__":
-    main()
+    main(60000)

@@ -91,6 +91,9 @@ def main():
     model.to(dist_util.dev()) #  DEBUG **
     model.cuda() #  DEBUG **
 
+    print(model)
+    for i, (name, param) in enumerate(model.named_parameters()):
+        print(i, ' ', name, ' ', param.size())
     pytorch_total_params = sum(p.numel() for p in model.parameters())
 
     logger.log(f'### The parameter count is {pytorch_total_params}')

@@ -92,7 +92,7 @@ class TrainLoop:
 
         self.checkpoint_path = checkpoint_path # DEBUG **
 
-        # self._load_and_sync_parameters() # ADD BY ME (we don't need sync, because we use single machine)
+        self._load_and_sync_parameters() # ADD BY ME (we don't need sync, because we use single machine)
         if self.use_fp16:
             self._setup_fp16()
 
@@ -149,7 +149,7 @@ class TrainLoop:
                     )
                 )
 
-        dist_util.sync_params(self.model.parameters())
+        # dist_util.sync_params(self.model.parameters())
 
     def _load_ema_parameters(self, rate):
         ema_params = copy.deepcopy(self.master_params)
@@ -164,7 +164,7 @@ class TrainLoop:
                 )
                 ema_params = self._state_dict_to_master_params(state_dict)
 
-        dist_util.sync_params(ema_params)
+        # dist_util.sync_params(ema_params)
         return ema_params
 
     def _load_optimizer_state(self):
@@ -385,16 +385,16 @@ class TrainLoop:
                     # pass # save empty
             return bf.join(self.checkpoint_path, filename)
 
-        path = save_checkpoint(0, self.master_params)
+        # path = save_checkpoint(0, self.master_params)
 
         for rate, params in zip(self.ema_rate, self.ema_params):
             save_checkpoint(rate, params)
 
-        score_train = sample_for_train('train', path)
-        score_valid = sample_for_train('valid', path)
+        # score_train = sample_for_train('train', path)
+        # score_valid = sample_for_train('valid', path)
 
-        logger.logkv("exact_match", score_train)
-        logger.logkv("eval_exact_match", score_valid)
+        # logger.logkv("exact_match", score_train)
+        # logger.logkv("eval_exact_match", score_valid)
 
         logger.dumpkvs()
 
