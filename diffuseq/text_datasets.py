@@ -62,9 +62,11 @@ def load_data_text(
         if nofb is None:
             return iter(data_loader)
         res_iter = list()
+
+        iter_dataloader = iter(data_loader)
         while nofb > 0:
             nofb -= 1
-            res_iter.append(next(iter(data_loader)))
+            res_iter.append(next(iter_dataloader))
         return iter(res_iter)
 
 def infinite_loader(data_loader):

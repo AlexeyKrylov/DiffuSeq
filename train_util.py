@@ -19,7 +19,6 @@ from diffuseq.utils.fp16_util import (
     zero_grad,
 )
 
-from sample_seq2seq import sample_for_train
 from diffuseq.utils.nn import update_ema
 from diffuseq.step_sample import LossAwareSampler, UniformSampler
 
@@ -378,23 +377,15 @@ class TrainLoop:
                     filename = f"ema_{rate}_{(self.step+self.resume_step):06d}.pt"
                 print('writing to', bf.join(get_blob_logdir(), filename))
                 print('writing to', bf.join(self.checkpoint_path, filename))
-                # with bf.BlobFile(bf.join(get_blob_logdir(), filename), "wb") as f:
-                #     th.save(state_dict, f)
+
                 with bf.BlobFile(bf.join(self.checkpoint_path, filename), "wb") as f: # DEBUG **
                     th.save(state_dict, f) # save locally
-                    # pass # save empty
             return bf.join(self.checkpoint_path, filename)
 
-        # path = save_checkpoint(0, self.master_params)
+        save_checkpoint(0, self.master_params)
 
         for rate, params in zip(self.ema_rate, self.ema_params):
             save_checkpoint(rate, params)
-
-        # score_train = sample_for_train('train', path)
-        # score_valid = sample_for_train('valid', path)
-
-        # logger.logkv("exact_match", score_train)
-        # logger.logkv("eval_exact_match", score_valid)
 
         logger.dumpkvs()
 
