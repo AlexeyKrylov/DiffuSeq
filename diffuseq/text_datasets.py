@@ -121,6 +121,7 @@ def helper_tokenize(sentence_lst, vocab_dict, seq_len):
             mask.append([0]*(len(src)+1))
         group_lst['input_ids'] = lst
         group_lst['input_mask'] = mask
+
         print(max([len(i) for i in lst]))
         return group_lst
     

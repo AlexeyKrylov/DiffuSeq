@@ -22,58 +22,28 @@ class myTokenizer():
     ### You can custome your own tokenizer here. ###
     ################################################
     def __init__(self, args):
-        # self.vocab_size = 7000
-        # try:
-        #     if args.test:
-        #         with open("checkpoint-path/tokenizer.pkl", 'rb') as f:
-        #             self.tokenizer = pickle.load(f)
-        #             self.vocab_size = len(self.tokenizer.get_vocab())
-        #             args.vocab_size = self.vocab_size  # update vocab size in args
-        #             self.sep_token_id = 2
-        #             self.pad_token_id = 3
-        #         print("successful loading !!")
-        #         return
-        # except:
-        #     print("TRAIN PHASE!")
         if args.vocab == 'bert':
             print(args.config_name)
             tokenizer = AutoTokenizer.from_pretrained("prajjwal1/bert-tiny")
-            # with open('./datasets/SparQL/src-english_train_split.txt', 'r', encoding='utf8') as f:
-            #     src = f.readlines()
-            #
-            # tokenizer = Tokenizer(BPE(unk_token="[UNK]"))
-            # trainer = BpeTrainer(special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]"], vocab_size=3602)
-            # tokenizer.pre_tokenizer = Whitespace()
-            # tokenizer.train_from_iterator([i.strip() for i in src], trainer)
             print(len(tokenizer.get_vocab()))
 
             self.tokenizer = tokenizer
 
-            with open('./datasets/SparQL/spec-english_train_split.txt', 'r') as f:
-                data = f.read()
+            with open(args.data_dir + args.add_query_toks_path, "r", encoding='utf8') as f:
+                data = json.load(f)
 
-            self.tokenizer.add_tokens(data.replace('\n', ' ').split(' '))
+            list_of_add_toks = []
+            for i in data:
+                list_of_add_toks.extend(i["query_toks"])
+
+            self.tokenizer.add_tokens(list_of_add_toks)
             self.sep_token_id = 2
             self.pad_token_id = 3
             # save
             # with open("checkpoint-path/tokenizer.pkl", "wb") as f:
             #     pickle.dump(self.tokenizer, f)
         else:
-            # load vocab from the path
-            print('#'*30, 'load vocab from', args.vocab)
-            vocab_dict = {'[START]': 0, '[END]': 1, '[UNK]':2, '[PAD]':3}
-            with open(args.vocab, 'r', encoding='utf-8') as f:
-                for row in f:
-                    vocab_dict[row.strip().split(' ')[0]] = len(vocab_dict)
-            self.tokenizer = vocab_dict
-            self.rev_tokenizer = {v: k for k, v in vocab_dict.items()}
-            self.sep_token_id = vocab_dict['[END]']
-            self.pad_token_id = vocab_dict['[PAD]']
-            # save
-            if int(os.environ['LOCAL_RANK']) == 0:
-                path_save_vocab = f'{args.checkpoint_path}/vocab.json'
-                with open(path_save_vocab, 'w') as f:
-                    json.dump(vocab_dict, f)
+            raise ValueError
                 
         self.vocab_size = len(self.tokenizer.get_vocab())
         args.vocab_size = self.vocab_size # update vocab size in args
@@ -104,25 +74,20 @@ def load_model_emb(args, tokenizer):
     ### random emb or pre-defined embedding like glove embedding. You can custome your own init here.
     model = torch.nn.Embedding(tokenizer.vocab_size, args.hidden_dim)
     path_save = '{}/random_emb.torch'.format(args.checkpoint_path)
-    path_save_ind = path_save + ".done"
-    if int(os.environ['LOCAL_RANK']) == 0:
-        if os.path.exists(path_save):
-            print('reload the random embeddings', model)
-            model.load_state_dict(torch.load(path_save))
-        else:
-            print('initializing the random embeddings', model)
-            torch.nn.init.normal_(model.weight)
-            if not os.path.exists('/'.join(path_save.split('/')[:-1])):
-                os.mkdir('/'.join(path_save.split('/')[:-1]))
-            torch.save(model.state_dict(), path_save)
-            # os.sync() # ADD BY ME
-            with open(path_save_ind, "x") as _:
-                pass
-    else:
-        while not os.path.exists(path_save_ind):
-            time.sleep(1)
+    # path_save_ind = path_save + ".done" # What is this?
+
+    if os.path.exists(path_save):
         print('reload the random embeddings', model)
         model.load_state_dict(torch.load(path_save))
+    else:
+        print('initializing the random embeddings', model)
+        torch.nn.init.normal_(model.weight)
+        if not os.path.exists('/'.join(path_save.split('/')[:-1])):
+            os.mkdir('/'.join(path_save.split('/')[:-1]))
+        torch.save(model.state_dict(), path_save)
+        # # os.sync() # ADD BY ME
+        # with open(path_save_ind, "x") as _: # What is this?
+        #     pass
 
     return model, tokenizer
 

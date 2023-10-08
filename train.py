@@ -37,7 +37,7 @@ def main():
     args = create_argparser().parse_args()
     print(args) # ADD BY ME
     set_seed(args.seed) 
-    dist_util.setup_dist()
+    # dist_util.setup_dist()
     logger.configure()
     logger.log("### Creating data loader...")
 
@@ -98,13 +98,10 @@ def main():
     # model.load_state_dict(
     #     dist_util.load_state_dict(args.resume_checkpoint, map_location="cpu")
     # )
-    print('#'*30, 'cuda', dist_util.dev())
-    model.to(dist_util.dev()) #  DEBUG **
-    model.cuda() #  DEBUG **
+    model.to(args.device) #  DEBUG **
 
-    print(model)
-    for i, (name, param) in enumerate(model.named_parameters()):
-        print(i, ' ', name, ' ', param.size())
+    # print(model)
+
     pytorch_total_params = sum(p.numel() for p in model.parameters())
 
     logger.log(f'### The parameter count is {pytorch_total_params}')
@@ -116,7 +113,7 @@ def main():
 
     if ('LOCAL_RANK' not in os.environ) or (int(os.environ['LOCAL_RANK']) == 0):
         wandb.init(
-            project=os.getenv("WANDB_PROJECT", "DiffuSeq"),
+            project=os.getenv("WANDB_PROJECT", "DiffuSeq_SQL"),
             name=args.checkpoint_path,
         )
         wandb.config.update(args.__dict__, allow_val_change=True)

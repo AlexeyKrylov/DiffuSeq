@@ -1,7 +1,9 @@
 {
-  "one_batch" : true,
+  "device" : "cuda:0",
+  "add_query_toks_path" : "/en_iid_train.json",
+  "one_batch" : false,
   "lr": 0.0001,
-  "batch_size": 32,
+  "batch_size": 2048,
   "microbatch": 8,
   "learning_steps": 1000,
   "log_interval": 30,
