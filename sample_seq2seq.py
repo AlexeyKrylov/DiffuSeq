@@ -7,7 +7,7 @@ import argparse
 import os, json
 from tracemalloc import start
 from tqdm import tqdm
-
+import sys
 import numpy as np
 import torch as th
 import torch.distributed as dist
@@ -41,7 +41,7 @@ def create_argparser(sample='valid', path='./checkpoint-path/model0010000.pt'):
 
 
 def main(filename):
-    args = create_argparser('valid', path=f'./checkpoint-path/Deberta/{filename}.pt').parse_args()
+    args = create_argparser('train', path=f'./checkpoint-path/Deberta/{filename}.pt').parse_args()
 
     dist_util.setup_dist()
     logger.configure()
@@ -49,7 +49,7 @@ def main(filename):
     # load configurations.
     config_path = "./checkpoint-path/Deberta/training_args.json"
     print(config_path)
-    import sys
+
     with open(config_path, 'rb', ) as f:
         training_args = json.load(f)
     training_args['batch_size'] = args.batch_size
@@ -219,4 +219,4 @@ def main(filename):
 
 
 if __name__ == "__main__":
-    main("model001000")
+    main(f"model000900")
