@@ -37,46 +37,57 @@ def main():
     args = create_argparser().parse_args()
     print(args) # ADD BY ME
     set_seed(args.seed) 
-    dist_util.setup_dist()
+    # dist_util.setup_dist()
     logger.configure()
     logger.log("### Creating data loader...")
 
     tokenizer = load_tokenizer(args)
     model_weight, tokenizer = load_model_emb(args, tokenizer)
 
-    data = load_data_text(
-        batch_size=args.batch_size,
-        seq_len=args.seq_len,
-        data_args = args,
-        loaded_vocab=tokenizer,
-        model_emb=model_weight # use model's weights as init
-    )
-    next(data)
+    if not args.one_batch:
+        data = load_data_text(
+            batch_size=args.batch_size,
+            seq_len=args.seq_len,
+            data_args = args,
+            loaded_vocab=tokenizer,
+            model_emb=model_weight # use model's weights as init
+        )
 
-    # data = load_data_text(
-    #     batch_size=args.batch_size,
-    #     seq_len=args.seq_len,
-    #     data_args=args,
-    #     split='valid',
-    #     deterministic=True,
-    #     loaded_vocab=tokenizer,
-    #     model_emb=model_weight,  # using the same embedding wight with tranining data
-    #     nofb=4,
-    #     nofs=4*args.microbatch
-    # )
-    data_valid = load_data_text(
-        batch_size=args.batch_size,
-        seq_len=args.seq_len,
-        data_args=args,
-        split='valid',
-        deterministic=True,
-        loaded_vocab=tokenizer,
-        model_emb=model_weight, # using the same embedding wight with tranining data
-        # nofb=4,
-        # nofs=4 * args.microbatch
-    )
+        data_valid = load_data_text(
+            batch_size=args.batch_size,
+            seq_len=args.seq_len,
+            data_args=args,
+            split='valid',
+            deterministic=True,
+            loaded_vocab=tokenizer,
+            model_emb=model_weight, # using the same embedding wight with tranining data
+        )
+    else:
+        data = load_data_text(
+            batch_size=args.batch_size,
+            seq_len=args.seq_len,
+            data_args=args,
+            split='valid',
+            deterministic=True,
+            loaded_vocab=tokenizer,
+            model_emb=model_weight,  # using the same embedding wight with tranining data
+            nofb=1,
+            nofs=args.batch_size
+        )
 
-    next(data_valid)
+
+        data_valid = load_data_text(
+            batch_size=args.batch_size,
+            seq_len=args.seq_len,
+            data_args=args,
+            split='valid',
+            deterministic=True,
+            loaded_vocab=tokenizer,
+            model_emb=model_weight,  # using the same embedding wight with tranining data
+            nofb=1,
+            nofs=args.batch_size
+        )
+
     print('#'*30, 'size of vocab', args.vocab_size)
 
     logger.log("### Creating model and diffusion...")
@@ -87,9 +98,9 @@ def main():
     # model.load_state_dict(
     #     dist_util.load_state_dict(args.resume_checkpoint, map_location="cpu")
     # )
-    print('#'*30, 'cuda', dist_util.dev())
-    model.to(dist_util.dev()) #  DEBUG **
-    model.cuda() #  DEBUG **
+    model.to(args.device) #  DEBUG **
+
+    # print(model)
 
     pytorch_total_params = sum(p.numel() for p in model.parameters())
 
@@ -102,7 +113,7 @@ def main():
 
     if ('LOCAL_RANK' not in os.environ) or (int(os.environ['LOCAL_RANK']) == 0):
         wandb.init(
-            project=os.getenv("WANDB_PROJECT", "DiffuSeq"),
+            project=os.getenv("WANDB_PROJECT", "DiffuSeq_SQL"),
             name=args.checkpoint_path,
         )
         wandb.config.update(args.__dict__, allow_val_change=True)

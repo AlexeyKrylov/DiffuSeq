@@ -5,8 +5,6 @@ import os
 import blobfile as bf
 import numpy as np
 import torch as th
-import torch.distributed as dist
-from torch.nn.parallel.distributed import DistributedDataParallel as DDP
 from torch.optim import AdamW
 import io
 
@@ -19,7 +17,6 @@ from diffuseq.utils.fp16_util import (
     zero_grad,
 )
 
-from sample_seq2seq import sample_for_train
 from diffuseq.utils.nn import update_ema
 from diffuseq.step_sample import LossAwareSampler, UniformSampler
 
@@ -83,7 +80,7 @@ class TrainLoop:
         if resume_checkpoint != 'no':
             self.resume_step = resume_step
 
-        self.global_batch = self.batch_size * dist.get_world_size()
+        self.global_batch = self.batch_size
 
         self.model_params = list(self.model.parameters())
         self.master_params = self.model_params
@@ -92,7 +89,7 @@ class TrainLoop:
 
         self.checkpoint_path = checkpoint_path # DEBUG **
 
-        # self._load_and_sync_parameters() # ADD BY ME (we don't need sync, because we use single machine)
+        self._load_and_sync_parameters() # ADD BY ME (we don't need sync, because we use single machine)
         if self.use_fp16:
             self._setup_fp16()
 
@@ -114,42 +111,19 @@ class TrainLoop:
         print("First EMA sum: ", sum([i.sum() for i in self.ema_params[0]]).item())
         print("First MASTER sum: ", sum([i.sum() for i in self.master_params]).item())
 
-
-
-        if th.cuda.is_available(): # DEBUG **
-            self.use_ddp = True
-            print(dist_util.dev())
-            self.ddp_model = DDP(
-                self.model,
-                device_ids=[dist_util.dev()],
-                output_device=dist_util.dev(),
-                broadcast_buffers=False,
-                bucket_cap_mb=128,
-                find_unused_parameters=False,
-            )
-        else:
-            if dist.get_world_size() > 1:
-                logger.warn(
-                    "Distributed training requires CUDA. "
-                    "Gradients will not be synchronized properly!"
-                )
-            self.use_ddp = False
-            self.ddp_model = self.model
+        self.use_ddp = False
+        self.ddp_model = self.model
 
     def _load_and_sync_parameters(self):
         resume_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
 
         if resume_checkpoint[-3:] == '.pt':
             self.resume_step = parse_resume_step_from_filename(resume_checkpoint)
-            if dist.get_rank() == 0:
-                logger.log(f"loading model from checkpoint: {resume_checkpoint}...")
-                self.model.load_state_dict(
-                    dist_util.load_state_dict(
-                        actual_model_path(resume_checkpoint), map_location=dist_util.dev()
-                    )
-                )
+            logger.log(f"loading model from checkpoint: {resume_checkpoint}...")
+            with bf.BlobFile(resume_checkpoint, "rb") as f:
+                data = f.read()
 
-        dist_util.sync_params(self.model.parameters())
+            self.model.load_state_dict(data)
 
     def _load_ema_parameters(self, rate):
         ema_params = copy.deepcopy(self.master_params)
@@ -157,14 +131,12 @@ class TrainLoop:
         main_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
         ema_checkpoint = find_ema_checkpoint(main_checkpoint, self.resume_step, rate)
         if ema_checkpoint:
-            if dist.get_rank() == 0:
-                logger.log(f"loading EMA from checkpoint: {ema_checkpoint}...")
-                state_dict = dist_util.load_state_dict(
-                    actual_model_path(ema_checkpoint), map_location=dist_util.dev()
-                )
-                ema_params = self._state_dict_to_master_params(state_dict)
+            logger.log(f"loading EMA from checkpoint: {ema_checkpoint}...")
+            state_dict = dist_util.load_state_dict(
+                actual_model_path(ema_checkpoint), map_location=dist_util.dev()
+            )
+            ema_params = self._state_dict_to_master_params(state_dict)
 
-        dist_util.sync_params(ema_params)
         return ema_params
 
     def _load_optimizer_state(self):
@@ -178,7 +150,6 @@ class TrainLoop:
 
     def _setup_fp16(self):
         self.master_params = make_master_params(self.model_params)
-        # self.model.convert_to_fp16()
         self.model = self.model.half()
 
     def run_loop(self):
@@ -187,8 +158,7 @@ class TrainLoop:
             or self.step + self.resume_step < self.learning_steps
         ):
             batch, cond = next(self.data)
-            # print("batch: ", batch)
-            # print("cond: ", cond)
+
             if self.use_fp16:
                 batch = batch.half()
 
@@ -221,16 +191,18 @@ class TrainLoop:
         self.log_step()
 
     def forward_only(self, batch, cond):
+        device = "cuda:0" if self.sync_cuda else "cpu"
+
         with th.no_grad():
             zero_grad(self.model_params)
             for i in range(0, batch.shape[0], self.microbatch):
-                micro = batch[i: i + self.microbatch].to(dist_util.dev())
+                micro = batch[i: i + self.microbatch].to(device)
                 micro_cond = {
-                    k: v[i: i + self.microbatch].to(dist_util.dev())
+                    k: v[i: i + self.microbatch].to(device)
                     for k, v in cond.items()
                 }
                 last_batch = (i + self.microbatch) >= batch.shape[0]
-                t, weights = self.schedule_sampler.sample(micro.shape[0], dist_util.dev())
+                t, weights = self.schedule_sampler.sample(micro.shape[0], device)
                 # print(micro_cond.keys())
                 compute_losses = functools.partial(
                     self.diffusion.training_losses,
@@ -252,15 +224,17 @@ class TrainLoop:
 
 
     def forward_backward(self, batch, cond):
+        device = "cuda:0" if self.sync_cuda else "cpu"
+
         zero_grad(self.model_params)
         for i in range(0, batch.shape[0], self.microbatch):
-            micro = batch[i : i + self.microbatch].to(dist_util.dev())
+            micro = batch[i : i + self.microbatch].to(device)
             micro_cond = {
-                k: v[i : i + self.microbatch].to(dist_util.dev())
+                k: v[i : i + self.microbatch].to(device)
                 for k, v in cond.items()
             }
             last_batch = (i + self.microbatch) >= batch.shape[0]
-            t, weights = self.schedule_sampler.sample(micro.shape[0], dist_util.dev())
+            t, weights = self.schedule_sampler.sample(micro.shape[0], device)
             # print("t: ", t)
             # print("weights: ", weights)
 
@@ -370,35 +344,25 @@ class TrainLoop:
     def save(self):
         def save_checkpoint(rate, params):
             state_dict = self._master_params_to_state_dict(params)
-            if dist.get_rank() == 0:
-                logger.log(f"saving model {rate}...")
-                if not rate:
-                    filename = f"model{(self.step+self.resume_step):06d}.pt"
-                else:
-                    filename = f"ema_{rate}_{(self.step+self.resume_step):06d}.pt"
-                print('writing to', bf.join(get_blob_logdir(), filename))
-                print('writing to', bf.join(self.checkpoint_path, filename))
-                # with bf.BlobFile(bf.join(get_blob_logdir(), filename), "wb") as f:
-                #     th.save(state_dict, f)
-                with bf.BlobFile(bf.join(self.checkpoint_path, filename), "wb") as f: # DEBUG **
-                    th.save(state_dict, f) # save locally
-                    # pass # save empty
+
+            logger.log(f"saving model {rate}...")
+            if not rate:
+                filename = f"model{(self.step+self.resume_step):06d}.pt"
+            else:
+                filename = f"ema_{rate}_{(self.step+self.resume_step):06d}.pt"
+            print('writing to', bf.join(get_blob_logdir(), filename))
+            print('writing to', bf.join(self.checkpoint_path, filename))
+
+            with bf.BlobFile(bf.join(self.checkpoint_path, filename), "wb") as f: # DEBUG **
+                th.save(state_dict, f) # save locally
             return bf.join(self.checkpoint_path, filename)
 
-        path = save_checkpoint(0, self.master_params)
+        save_checkpoint(0, self.master_params)
 
         for rate, params in zip(self.ema_rate, self.ema_params):
             save_checkpoint(rate, params)
 
-        score_train = sample_for_train('train', path)
-        score_valid = sample_for_train('valid', path)
-
-        logger.logkv("exact_match", score_train)
-        logger.logkv("eval_exact_match", score_valid)
-
         logger.dumpkvs()
-
-        dist.barrier()
 
     def _master_params_to_state_dict(self, master_params):
         if self.use_fp16:

@@ -1,6 +1,6 @@
 from transformers import AutoConfig
 # from transformers import BertEncoder
-from transformers.models.bert.modeling_bert import BertEncoder, BertModel
+from transformers.models.deberta.modeling_deberta import DebertaEncoder, DebertaModel
 import torch
 
 import numpy as np
@@ -53,6 +53,7 @@ class TransformerNetModel(nn.Module):
         self.hidden_size = config.hidden_size
 
         self.word_embedding = nn.Embedding(vocab_size, self.input_dims)
+
         self.lm_head = nn.Linear(self.input_dims, vocab_size)
         with th.no_grad():
             self.lm_head.weight = self.word_embedding.weight
@@ -100,11 +101,11 @@ class TransformerNetModel(nn.Module):
 
         elif init_pretrained == 'no':
 
-            self.input_transformers = BertEncoder(config)
+            self.input_transformers = DebertaEncoder(config)
 
-            self.register_buffer("position_ids", torch.arange(config.max_position_embeddings).expand((1, -1)))
+            # self.register_buffer("position_ids", torch.arange(config.max_position_embeddings).expand((1, -1)))
 
-            self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
+            # self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
             self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         
         else:
@@ -156,14 +157,16 @@ class TransformerNetModel(nn.Module):
             emb_x = x
 
         seq_length = x.size(1)
-        position_ids = self.position_ids[:, : seq_length ]
-        # print(emb_x.shape, emb_t.shape, self.position_embeddings)
+        # position_ids = self.position_ids[:, : seq_length ]
+        # print(emb_x.shape, emb_t.shape)
 
-        emb_inputs = self.position_embeddings(position_ids) + emb_x + emb_t.unsqueeze(1).expand(-1, seq_length, -1)
+        emb_inputs = emb_x + emb_t.unsqueeze(1).expand(-1, seq_length, -1)
         emb_inputs = self.dropout(self.LayerNorm(emb_inputs))
 
-        input_trans_hidden_states = self.input_transformers(emb_inputs).last_hidden_state
-        
+        input_trans_hidden_states = self.input_transformers(emb_inputs, attention_mask=torch.ones(emb_inputs.shape[0],
+                                                                                                  emb_inputs.shape[1],
+                                                                                                  emb_inputs.shape[1]).cuda().half()).last_hidden_state
+
         if self.output_dims != self.hidden_size:
             h = self.output_down_proj(input_trans_hidden_states)
         else:

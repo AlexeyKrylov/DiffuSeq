@@ -603,7 +603,7 @@ class GaussianDiffusion:
         kind_of_type = x_start.dtype
         input_ids_x = model_kwargs.pop('input_ids').to(t.device)
         input_ids_mask = model_kwargs.pop('input_mask').to(t.device)
-        x_start_mean = model.model.module.get_embeds(input_ids_x)
+        x_start_mean = model.get_embeds(input_ids_x)
 
         # print("input_ids_x: ", input_ids_x)
         # print("input_ids_mask: ", input_ids_mask)
@@ -623,12 +623,21 @@ class GaussianDiffusion:
 
         x_t = self.q_sample(x_start, t, noise=noise, mask=input_ids_mask, type=kind_of_type) # reparametrization trick.
 
-        get_logits = model.model.module.get_logits
+        get_logits = model.get_logits
 
         terms = {}
 
         target = x_start
-        model_output = model(x_t, self._scale_timesteps(t), **model_kwargs)
+
+        ts = self._scale_timesteps(t)
+
+        map_tensor = th.tensor(self.timestep_map, device=ts.device, dtype=ts.dtype)
+        new_ts = map_tensor[ts]
+
+        if self.rescale_timesteps:
+            new_ts = new_ts.float() * (1000.0 / self.original_num_steps)
+
+        model_output = model(x_t, new_ts, **model_kwargs)
         assert model_output.shape == target.shape == x_start.shape
         terms["mse"] = mean_flat((target - model_output) ** 2)
 
@@ -941,13 +950,13 @@ class SpacedDiffusion(GaussianDiffusion):
         self, model, *args, **kwargs
     ):  # pylint: disable=signature-differs
         # print('called p_mean_var')
-        return super().p_mean_variance(self._wrap_model(model), *args, **kwargs)
+        return super().p_mean_variance(model, *args, **kwargs)
 
     def training_losses(
         self, model, *args, **kwargs
     ):  # pylint: disable=signature-differs
         # print('called training_losses')
-        return super().training_losses(self._wrap_model(model), *args, **kwargs)
+        return super().training_losses(model, *args, **kwargs)
 
     def _wrap_model(self, model):
         if isinstance(model, _WrappedModel):
