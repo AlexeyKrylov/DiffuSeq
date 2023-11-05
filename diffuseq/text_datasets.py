@@ -121,7 +121,9 @@ def helper_tokenize(sentence_lst, vocab_dict, seq_len):
             mask.append([0]*(len(src)+1))
         group_lst['input_ids'] = lst
         group_lst['input_mask'] = mask
+        print('-'*120)
         print(max([len(i) for i in lst]))
+        print('-'*120)
         return group_lst
     
     tokenized_datasets = tokenized_datasets.map(

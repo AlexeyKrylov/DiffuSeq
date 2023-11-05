@@ -22,81 +22,123 @@ class myTokenizer():
     ### You can custome your own tokenizer here. ###
     ################################################
     def __init__(self, args):
-        # self.vocab_size = 7000
-        # try:
-        #     if args.test:
-        #         with open("checkpoint-path/tokenizer.pkl", 'rb') as f:
-        #             self.tokenizer = pickle.load(f)
-        #             self.vocab_size = len(self.tokenizer.get_vocab())
-        #             args.vocab_size = self.vocab_size  # update vocab size in args
-        #             self.sep_token_id = 2
-        #             self.pad_token_id = 3
-        #         print("successful loading !!")
-        #         return
-        # except:
-        #     print("TRAIN PHASE!")
         if args.vocab == 'bert':
             print(args.config_name)
-            tokenizer = AutoTokenizer.from_pretrained("prajjwal1/bert-tiny")
-            # with open('./datasets/SparQL/src-english_train_split.txt', 'r', encoding='utf8') as f:
-            #     src = f.readlines()
-            #
-            # tokenizer = Tokenizer(BPE(unk_token="[UNK]"))
-            # trainer = BpeTrainer(special_tokens=["[UNK]", "[CLS]", "[SEP]", "[PAD]"], vocab_size=3602)
-            # tokenizer.pre_tokenizer = Whitespace()
-            # tokenizer.train_from_iterator([i.strip() for i in src], trainer)
+            # tokenizer = AutoTokenizer.from_pretrained('gaussalgo/T5-LM-Large-text2sql-spider')
+            tokenizer = AutoTokenizer.from_pretrained(args.config_name)
+
             print(len(tokenizer.get_vocab()))
 
             self.tokenizer = tokenizer
 
-            with open('./datasets/SparQL/spec-english_train_split.txt', 'r') as f:
-                data = f.read()
+            # with open(args.data_dir + args.add_query_toks_path, "r", encoding='utf8') as f:
+            #     data = json.load(f)
+            #
+            list_of_add_toks = ['=', 'FROM', 'AS', 'SELECT', 'JOIN', 'ON', 'WHERE', 'BY', ',', 'T1', 'T2', 'GROUP', 'ORDER', 'BY', 'AND', 't2', 't1', '(', ')', 'DISTINCT', 'DESC', 'LIMIT', '>', 't3', 'T3', 'COUNT', 'HAVING', '(SELECT', 't4', 'IN', '<', 'LOCATION', 'LIKE', 'INTERSECT', '>=', 'NOT', 'YEAR', 'OR', 'ASC', 'MAX', 'EXCEPT', '!=', 't5', 'MIN', 'BETWEEN', 'T4', 'UNION', 'CAST', 'SUM', '[question]', ' [schema]', ' [SEP_SCHEMS]']
+            # for i in data:
+            #     list_of_add_toks.extend(i["query_toks"])
 
-            self.tokenizer.add_tokens(data.replace('\n', ' ').split(' '))
-            self.sep_token_id = 2
-            self.pad_token_id = 3
+            self.tokenizer.add_tokens(list_of_add_toks)
+
+            print(len(tokenizer.get_vocab()))
+
+            # self.sep_token_id = 1
+            # self.pad_token_id = 0
+
+            self.sep_token_id = 102
+            self.pad_token_id = 0
+            # save
+            # with open("checkpoint-path/tokenizer.pkl", "wb") as f:
+            #     pickle.dump(self.tokenizer, f)
+        elif args.vocab == 't5':
+            # tokenizer = AutoTokenizer.from_pretrained('gaussalgo/T5-LM-Large-text2sql-spider')
+            tokenizer = AutoTokenizer.from_pretrained('t5-base')
+
+            print(len(tokenizer.get_vocab()))
+
+            self.tokenizer = tokenizer
+
+            # with open(args.data_dir + args.add_query_toks_path, "r", encoding='utf8') as f:
+            #     data = json.load(f)
+
+
+            list_of_add_toks = [
+                                ' FROM',
+                                ' AS',
+                                'SELECT', 'select',
+                                ' JOIN',
+                                ' ON',
+                                ' WHERE',
+                                ' T1', ' t1',
+                                ' T2', ' t2',
+                                ' T3', ' t3',
+                                ' T4', ' t4',
+                                ' T5', ' t5',
+                                ' GROUP BY',
+                                ' ORDER BY',
+                                ' AND',
+                                ' DISTINCT',
+                                ' DESC', ' desc',
+                                ' LIMIT',
+                                ' COUNT',
+                                ' HAVING',
+                                ' IN',
+                                ' LIKE',
+                                ' INTERSECT',
+                                ' NOT',
+                                ' OR',
+                                ' ASC', ' asc',
+                                ' MAX', ' max'
+                                ' AVG', ' avg',
+                                ' EXCEPT',
+                                ' MIN', ' min',
+                                ' BETWEEN',
+                                ' UNION',
+                                ' CAST',
+                                ' SUM',
+                                '[question]', ' ,',
+                                ' [schema]', ' :',
+                                ' [SEP_SCHEMS]'
+                                ]
+
+            # for i in list_of_add_toks:
+            #     if ord(i[0]) == 32:
+            #         i = chr(9601) + i[1:]
+
+            print(list_of_add_toks)
+            # for i in data:
+            #     list_of_add_toks.extend(i["query_toks"])
+
+            self.tokenizer.add_tokens(list_of_add_toks)
+
+            print(len(tokenizer.get_vocab()))
+
+            self.sep_token_id = 1
+            self.pad_token_id = 0
             # save
             # with open("checkpoint-path/tokenizer.pkl", "wb") as f:
             #     pickle.dump(self.tokenizer, f)
         else:
-            # load vocab from the path
-            print('#'*30, 'load vocab from', args.vocab)
-            vocab_dict = {'[START]': 0, '[END]': 1, '[UNK]':2, '[PAD]':3}
-            with open(args.vocab, 'r', encoding='utf-8') as f:
-                for row in f:
-                    vocab_dict[row.strip().split(' ')[0]] = len(vocab_dict)
-            self.tokenizer = vocab_dict
-            self.rev_tokenizer = {v: k for k, v in vocab_dict.items()}
-            self.sep_token_id = vocab_dict['[END]']
-            self.pad_token_id = vocab_dict['[PAD]']
-            # save
-            if int(os.environ['LOCAL_RANK']) == 0:
-                path_save_vocab = f'{args.checkpoint_path}/vocab.json'
-                with open(path_save_vocab, 'w') as f:
-                    json.dump(vocab_dict, f)
-                
+            raise ValueError
+
         self.vocab_size = len(self.tokenizer.get_vocab())
         args.vocab_size = self.vocab_size # update vocab size in args
     
     def encode_token(self, sentences):
-        if isinstance(self.tokenizer, dict):
-            input_ids = [[0] + [self.tokenizer.get(x, self.tokenizer['[UNK]']) for x in seq.split()] + [1] for seq in sentences]
-        else:
-            # input_ids = [i.ids for i in self.tokenizer.encode_batch(sentences, add_special_tokens=True)]
-            input_ids = self.tokenizer(sentences, add_special_tokens=True)['input_ids']
+        input_ids = self.tokenizer(sentences, add_special_tokens=True)['input_ids']
+        print([self.tokenizer.decode(x) for x in input_ids[:4]])
+        print([self.tokenizer.decode(x) for x in input_ids[0]])
+        print([self.tokenizer.decode(x) for x in input_ids[1]])
+        print([self.tokenizer.decode(x) for x in input_ids[2]])
+        print([self.tokenizer.decode(x) for x in input_ids[3]])
         return input_ids
         
     def decode_token(self, seq):
-        if isinstance(self.tokenizer, dict):
-            seq = seq.squeeze(-1).tolist()
-            while len(seq)>0 and seq[-1] == self.pad_token_id:
-                seq.pop()
-            tokens = " ".join([self.rev_tokenizer[x] for x in seq]).replace('__ ', '').replace('@@ ', '')
-        else:
-            seq = seq.squeeze(-1).tolist()
-            while len(seq)>0 and seq[-1] == self.pad_token_id:
-                seq.pop()
-            tokens = self.tokenizer.decode(seq)
+        seq = seq.squeeze(-1).tolist()
+        while len(seq)>0 and seq[-1] == self.pad_token_id:
+            seq.pop()
+        print([self.tokenizer.decode(x) for x in seq])
+        tokens = self.tokenizer.decode(seq)
         return tokens
 
 
@@ -104,25 +146,20 @@ def load_model_emb(args, tokenizer):
     ### random emb or pre-defined embedding like glove embedding. You can custome your own init here.
     model = torch.nn.Embedding(tokenizer.vocab_size, args.hidden_dim)
     path_save = '{}/random_emb.torch'.format(args.checkpoint_path)
-    path_save_ind = path_save + ".done"
-    if int(os.environ['LOCAL_RANK']) == 0:
-        if os.path.exists(path_save):
-            print('reload the random embeddings', model)
-            model.load_state_dict(torch.load(path_save))
-        else:
-            print('initializing the random embeddings', model)
-            torch.nn.init.normal_(model.weight)
-            if not os.path.exists('/'.join(path_save.split('/')[:-1])):
-                os.mkdir('/'.join(path_save.split('/')[:-1]))
-            torch.save(model.state_dict(), path_save)
-            # os.sync() # ADD BY ME
-            with open(path_save_ind, "x") as _:
-                pass
-    else:
-        while not os.path.exists(path_save_ind):
-            time.sleep(1)
+    path_save_ind = path_save + ".done" # What is this?
+
+    if os.path.exists(path_save):
         print('reload the random embeddings', model)
         model.load_state_dict(torch.load(path_save))
+    else:
+        print('initializing the random embeddings', model)
+        torch.nn.init.normal_(model.weight)
+        if not os.path.exists('/'.join(path_save.split('/')[:-1])):
+            os.mkdir('/'.join(path_save.split('/')[:-1]))
+        torch.save(model.state_dict(), path_save)
+        # os.sync() # ADD BY ME
+        with open(path_save_ind, "x") as _: # What is this?
+            pass
 
     return model, tokenizer
 

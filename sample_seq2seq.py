@@ -41,13 +41,13 @@ def create_argparser(sample='valid', path='./checkpoint-path/model0010000.pt'):
 
 
 def main(filename):
-    args = create_argparser('valid', path=f'./checkpoint-path/Deberta/{filename}.pt').parse_args()
+    args = create_argparser('valid', path=f'./checkpoint-path/Bert/{filename}.pt').parse_args()
 
     dist_util.setup_dist()
     logger.configure()
 
     # load configurations.
-    config_path = "./checkpoint-path/Deberta/training_args.json"
+    config_path = "./checkpoint-path/Bert/training_args.json"
     print(config_path)
     import sys
     with open(config_path, 'rb', ) as f:
@@ -90,7 +90,7 @@ def main(filename):
     ## load data
     print(args.split)
     data_valid = load_data_text(
-        batch_size=8,
+        batch_size=4,
         seq_len=args.seq_len,
         deterministic=True,
         data_args=args,
@@ -219,4 +219,4 @@ def main(filename):
 
 
 if __name__ == "__main__":
-    main("model001000")
+    main("model002000")

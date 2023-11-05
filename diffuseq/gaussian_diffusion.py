@@ -608,8 +608,7 @@ class GaussianDiffusion:
         # print("input_ids_x: ", input_ids_x)
         # print("input_ids_mask: ", input_ids_mask)
         # print("x_start_mean: ", x_start_mean)
-        #
-        # raise StopIteration
+
         std = _extract_into_tensor(self.sqrt_one_minus_alphas_cumprod,
                                    th.tensor([0]).to(x_start_mean.device),
                                    x_start_mean.shape, kind_of_type)
@@ -969,15 +968,8 @@ class _WrappedModel:
         self.original_num_steps = original_num_steps
 
     def __call__(self, x, ts, **kwargs):
-        # print(ts)
         map_tensor = th.tensor(self.timestep_map, device=ts.device, dtype=ts.dtype)
         new_ts = map_tensor[ts]
-        # print(new_ts)
         if self.rescale_timesteps:
             new_ts = new_ts.float() * (1000.0 / self.original_num_steps)
-        # new_ts = new_ts.to(ts.dtype) # TODO
-        # temp = self.model(x, new_ts, **kwargs)
-        # print(temp.shape)
-        # return temp
-        # print(new_ts)
         return self.model(x, new_ts, **kwargs)
