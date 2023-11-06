@@ -15,6 +15,7 @@ from diffuseq.utils.fp16_util import (
     unflatten_master_params,
     zero_grad,
 )
+from transformers import Adafactor
 from diffuseq.utils.nn import update_ema
 from diffuseq.step_sample import LossAwareSampler, UniformSampler
 
@@ -92,7 +93,12 @@ class TrainLoop:
         if self.use_fp16:
             self._setup_fp16()
 
-        self.opt = AdamW(self.master_params, lr=self.lr, weight_decay=self.weight_decay)
+        if self.args.optimizer == "AdamW":
+            self.opt = AdamW(self.master_params, lr=self.lr, weight_decay=self.weight_decay)
+        elif self.args.optimizer == "Adafactor":
+            self.opt = Adafactor(self.master_params, lr=self.lr, weight_decay=self.weight_decay, relative_step=False, scale_parameter=False)
+        else:
+            raise ValueError
 
         if self.resume_step:
             # self._load_optimizer_state() # TODO
@@ -318,8 +324,8 @@ class TrainLoop:
         for rate, params in zip(self.ema_rate, self.ema_params):
             update_ema(params, self.master_params, rate=rate)
         # print(self.master_params)
-        print("EMA sum: ", sum([i.sum() for i in self.ema_params[0]]).item())
-        print("MASTER sum: ", sum([i.sum() for i in self.master_params]).item())
+        # print("EMA sum: ", sum([i.sum() for i in self.ema_params[0]]).item())
+        # print("MASTER sum: ", sum([i.sum() for i in self.master_params]).item())
 
     def _log_grad_norm(self):
         sqsum = 0.0

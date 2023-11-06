@@ -1,8 +1,8 @@
 from transformers import AutoConfig
-from transformers.models.bert.modeling_bert import BertEncoder, BertModel
+from transformers.models.bert.modeling_bert import BertEncoder, BertModel, BertForMaskedLM
 from transformers.models.deberta.modeling_deberta import DebertaEncoder, DebertaModel
 import torch
-
+from transformers import T5ForConditionalGeneration
 import numpy as np
 import torch as th
 import torch.nn as nn
@@ -57,7 +57,9 @@ class TransformerNetModel(nn.Module):
         self.hidden_size = config.hidden_size
 
         self.word_embedding = nn.Embedding(vocab_size, self.input_dims)
-        # self.src_flag_emb = nn.Embedding(2, config.hidden_size)
+
+        if args.token_type_embeddings:
+            self.src_flag_emb = nn.Embedding(2, config.hidden_size)
 
         self.lm_head = nn.Linear(self.input_dims, vocab_size)
         with th.no_grad():
@@ -74,60 +76,52 @@ class TransformerNetModel(nn.Module):
             self.input_up_proj = nn.Sequential(nn.Linear(input_dims, config.hidden_size),
                                               nn.Tanh(), nn.Linear(config.hidden_size, config.hidden_size))
         
-        if init_pretrained == 'bert':
-            print('initializing from pretrained bert...')
-            print(config)
-            temp_bert = BertModel.from_pretrained(self.config_name)
+        if init_pretrained == 't5_full':
+            if args.debug_mode:
+                print('initializing from pretrained t5...')
+                print(config)
 
-            embedding_layer = temp_bert.embeddings.word_embeddings
-            old_num_tokens, old_embedding_dim = embedding_layer.weight.shape
-            new_embeddings = nn.Embedding(32148, old_embedding_dim)     # TODO
+            temp_t5 = T5ForConditionalGeneration.from_pretrained(self.config_name)
+            temp_t5.resize_token_embeddings(self.args.vocab_size)
 
-            new_embeddings.to(embedding_layer.weight.device, dtype=embedding_layer.weight.dtype)
-            new_embeddings.weight.data[:old_num_tokens, :] = embedding_layer.weight.data[:old_num_tokens, :]
+            self.word_embedding = temp_t5.encoder.embed_tokens
 
-            self.word_embedding = new_embeddings
-
-            with th.no_grad():
+            with torch.no_grad():
                 self.lm_head.weight = self.word_embedding.weight
-            
-            self.input_transformers = temp_bert.encoder
 
-            self.register_buffer("position_ids", torch.arange(512).expand((1, -1)))
-            self.position_embeddings = temp_bert.embeddings.position_embeddings
-            self.LayerNorm = temp_bert.embeddings.LayerNorm
+            self.input_transformers = temp_t5.encoder
 
-            del temp_bert.embeddings
-            del temp_bert.pooler
+            del temp_t5.shared
+            del temp_t5.decoder
+
         elif init_pretrained == 'bert_full':
-            print('initializing from pretrained bert...')
-            print(config)
-            temp_bert = BertModel.from_pretrained(self.config_name)
-            temp_bert = temp_bert.resize_token_embeddings(32148)
-            #
-            # embedding_layer = temp_bert.embeddings.word_embeddings
-            # old_num_tokens, old_embedding_dim = embedding_layer.weight.shape
-            # new_embeddings = nn.Embedding(32148, old_embedding_dim)  # TODO
-            #
-            # new_embeddings.to(embedding_layer.weight.device, dtype=embedding_layer.weight.dtype)
-            # new_embeddings.weight.data[:old_num_tokens, :] = embedding_layer.weight.data[:old_num_tokens, :]
 
-            self.word_embedding = temp_bert.embeddings.word_embeddings
+            if args.debug_mode:
+                print('initializing from pretrained bert...')
+                print(config)
 
-            with th.no_grad():
-                self.lm_head.weight = self.word_embedding.weight
+            temp_bert = BertForMaskedLM.from_pretrained(self.config_name)
+            temp_bert.resize_token_embeddings(self.args.vocab_size)
 
-            self.input_transformers = temp_bert.encoder
+            self.word_embedding = temp_bert.bert.embeddings.word_embeddings
+
+            with torch.no_grad():
+                self.lm_head.weight = temp_bert.bert.embeddings.word_embeddings.weight
+
+            self.input_transformers = temp_bert.bert.encoder
 
             self.register_buffer("position_ids", torch.arange(512).expand((1, -1)))
-            self.position_embeddings = temp_bert.embeddings.position_embeddings
-            self.LayerNorm = temp_bert.embeddings.LayerNorm
+            self.position_embeddings = temp_bert.bert.embeddings.position_embeddings
 
-            del temp_bert.embeddings
-            del temp_bert.pooler
+            if self.args.token_type_embeddings:
+                self.src_flag_emb = temp_bert.bert.embeddings.token_type_embeddings
+
+            self.LayerNorm = temp_bert.bert.embeddings.LayerNorm
+
+            if not self.args.token_type_embeddings:
+                del temp_bert.bert.embeddings.token_type_embeddings
 
         elif init_pretrained == 'no':
-            # config.max_position_embeddings = 512
             self.input_transformers = BertEncoder(config)
 
             self.register_buffer("position_ids", torch.arange(config.max_position_embeddings).expand((1, -1)))
@@ -137,7 +131,9 @@ class TransformerNetModel(nn.Module):
 
         else:
             assert False, "invalid type of init_pretrained"
-        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+
+        if init_pretrained != 't5_full':
+            self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
         if self.output_dims != config.hidden_size:
             self.output_down_proj = nn.Sequential(nn.Linear(config.hidden_size, config.hidden_size),
@@ -162,24 +158,35 @@ class TransformerNetModel(nn.Module):
         emb_t_0 = emb_t_0.to(kind_of_type)
         emb_t = self.time_embed(emb_t_0)
 
-        # emb_src = self.src_flag_emb(input_ids_mask)
-
         if self.input_dims != self.hidden_size:
             emb_x = self.input_up_proj(x)
         else:
             emb_x = x
 
         seq_length = x.size(1)
-        position_ids = self.position_ids[:, : seq_length]
 
-        emb_inputs = self.position_embeddings(position_ids) + emb_x + emb_t.unsqueeze(1).expand(-1, seq_length, -1) #+ emb_src
-        emb_inputs = self.dropout(self.LayerNorm(emb_inputs))
+        if self.args.use_plm_init[:2] != "t5":
+            position_ids = self.position_ids[:, : seq_length]
+            emb_inputs = self.position_embeddings(position_ids) + emb_x + emb_t.unsqueeze(1).expand(-1, seq_length, -1)
+        else:
+            emb_inputs = emb_x + emb_t.unsqueeze(1).expand(-1, seq_length, -1)
 
-        input_trans_hidden_states = self.input_transformers(emb_inputs).last_hidden_state
+        if self.args.token_type_embeddings:
+            emb_src = self.src_flag_emb(input_ids_mask)
+            emb_inputs += emb_src
+
+
+
+        if self.args.use_plm_init[:2] != "t5":
+            emb_inputs = self.dropout(self.LayerNorm(emb_inputs))
+            input_trans_hidden_states = self.input_transformers(emb_inputs).last_hidden_state
+        else:
+            input_trans_hidden_states = self.input_transformers(inputs_embeds=emb_inputs)[0]
 
         if self.output_dims != self.hidden_size:
             h = self.output_down_proj(input_trans_hidden_states)
         else:
             h = input_trans_hidden_states
         h = h.type(x.dtype)
+
         return h
