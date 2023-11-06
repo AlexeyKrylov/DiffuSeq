@@ -9,6 +9,7 @@ import enum
 import math
 
 import numpy as np
+import torch
 import torch as th
 import sys
 sys.path.append('.')
@@ -133,7 +134,7 @@ class GaussianDiffusion:
 
     def __init__(
         self,
-        *,
+        args,
         betas,
         predict_xstart,
         rescale_learned_sigmas,
@@ -142,6 +143,7 @@ class GaussianDiffusion:
         use_kl,
         rescale_timesteps=False,
     ):
+        self.args = args
         self.rescale_timesteps = rescale_timesteps
         self.predict_xstart = predict_xstart
         self.rescale_learned_sigmas = rescale_learned_sigmas
@@ -282,7 +284,7 @@ class GaussianDiffusion:
         return posterior_mean, posterior_variance, posterior_log_variance_clipped
 
     def p_mean_variance(
-        self, model, x, t, clip_denoised=True, denoised_fn=None, model_kwargs=None, type=th.float32
+        self, model, x, t, clip_denoised=True, denoised_fn=None, model_kwargs=None, type=th.float32, mask=None, attention_mask=None
     ):
         """
         Apply the model to get p(x_{t-1} | x_t), as well as a prediction of
@@ -310,7 +312,7 @@ class GaussianDiffusion:
         B, C = x.size(0), x.size(-1)
         assert t.shape == (B,)
         # print(x.shape)
-        model_output = model(x, self._scale_timesteps(t), **model_kwargs)
+        model_output = model(x, self._scale_timesteps(t), attention_mask=attention_mask, input_ids_kwargs=mask, **model_kwargs)
         
         # for fixedlarge, we set the initial (log-)variance like so
         # to get a better decoder log likelihood.
@@ -322,7 +324,6 @@ class GaussianDiffusion:
 
         def process_xstart(x):
             if denoised_fn is not None:
-                # print(denoised_fn)
                 x = denoised_fn(x, t)
             if clip_denoised:
                 return x.clamp(-1, 1)
@@ -352,7 +353,7 @@ class GaussianDiffusion:
 
     def p_sample(
         self, model, x, t, clip_denoised=True, denoised_fn=None, model_kwargs=None,
-            top_p=None, mask=None, x_start=None, type=th.float32
+            top_p=None, mask=None, x_start=None, type=th.float32, attention_mask=None
     ):
         """
         Sample x_{t-1} from the model at the given timestep.
@@ -377,7 +378,9 @@ class GaussianDiffusion:
             clip_denoised=clip_denoised,
             denoised_fn=denoised_fn,
             model_kwargs=model_kwargs,
-            type=type
+            type=type,
+            mask=mask,
+            attention_mask=attention_mask
         )
         if top_p is not None and top_p > 0:
             # print('top_p sampling')
@@ -424,6 +427,7 @@ class GaussianDiffusion:
         mask=None,
         x_start=None,
         gap=1,
+        attention_mask=None,
     ):
         """
         Generate samples from the model.
@@ -459,7 +463,8 @@ class GaussianDiffusion:
             clamp_step=clamp_step,
             clamp_first=clamp_first,
             mask=mask,
-            x_start=x_start
+            x_start=x_start,
+            attention_mask=attention_mask
         ):
             final.append(sample['sample'])
         return final
@@ -479,6 +484,7 @@ class GaussianDiffusion:
         clamp_first=None,
         mask=None,
         x_start=None,
+        attention_mask=None
     ):
         """
         Generate samples from the model and yield intermediate samples from
@@ -525,7 +531,8 @@ class GaussianDiffusion:
                     top_p=top_p,
                     mask=mask,
                     x_start=x_start,
-                    type=x_start.dtype
+                    type=x_start.dtype,
+                    attention_mask=attention_mask
                 )
                 yield out
                 sample_x = out["sample"].to(x_start.dtype)
@@ -539,7 +546,6 @@ class GaussianDiffusion:
         '''
         noise = th.randn_like(x_start_mean, dtype=type)
         assert noise.shape == x_start_mean.shape
-        # print(x_start_mean.device, noise.device)
         return (
              x_start_mean + std * noise
         )
@@ -554,8 +560,6 @@ class GaussianDiffusion:
         logits = get_logits(reshaped_x_t)  # bsz, seqlen, vocab
         # print(logits.shape)
         loss_fct = th.nn.CrossEntropyLoss(reduction='none')
-        # print("input_ids: ", input_ids.view(-1).long())
-        # print("predictions: ", logits.view(-1, logits.size(-1)).argmax(axis=-1))
         decoder_nll = loss_fct(logits.view(-1, logits.size(-1)), input_ids.view(-1).long()).view(input_ids.shape) ## ADD BY ME long
         if mask != None:
             decoder_nll *= mask
@@ -584,7 +588,7 @@ class GaussianDiffusion:
 
         return {'pred_xprev':pred_prev, 'pred_xstart':pred_xstart}
 
-    def training_losses_seq2seq(self, model, x_start, t, model_kwargs=None, noise=None):
+    def training_losses_seq2seq(self, model, t, model_kwargs=None, noise=None):
         """
         Compute training losses for a single timestep.
 
@@ -597,17 +601,18 @@ class GaussianDiffusion:
         :return: a dict with the key "loss" containing a tensor of shape [N].
                  Some mean or variance settings may also have other keys.
         """
-        x_start_fix = x_start # save the orignal x_0
         assert 'input_ids' in model_kwargs
 
-        kind_of_type = x_start.dtype
+        if self.args.use_fp16:
+            kind_of_type = torch.float16
+        else:
+            kind_of_type = torch.float32
+
         input_ids_x = model_kwargs.pop('input_ids').to(t.device)
         input_ids_mask = model_kwargs.pop('input_mask').to(t.device)
-        x_start_mean = model.model.module.get_embeds(input_ids_x)
+        attention_mask = model_kwargs.pop('attention_mask').to(t.device)
 
-        # print("input_ids_x: ", input_ids_x)
-        # print("input_ids_mask: ", input_ids_mask)
-        # print("x_start_mean: ", x_start_mean)
+        x_start_mean = model.model.module.get_embeds(input_ids_x)
 
         std = _extract_into_tensor(self.sqrt_one_minus_alphas_cumprod,
                                    th.tensor([0]).to(x_start_mean.device),
@@ -627,7 +632,7 @@ class GaussianDiffusion:
         terms = {}
 
         target = x_start
-        model_output = model(x_t, self._scale_timesteps(t), **model_kwargs)
+        model_output = model(x_t, self._scale_timesteps(t), attention_mask, input_ids_mask, **model_kwargs)
         assert model_output.shape == target.shape == x_start.shape
         terms["mse"] = mean_flat((target - model_output) ** 2)
 
@@ -919,13 +924,14 @@ class SpacedDiffusion(GaussianDiffusion):
     :param kwargs: the kwargs to create the base diffusion process.
     """
 
-    def __init__(self, use_timesteps, **kwargs):
+    def __init__(self, args,  use_timesteps, **kwargs):
+        self.args = args
         self.use_timesteps = set(use_timesteps)
         self.timestep_map = []
         self.original_num_steps = len(kwargs["betas"])
 
         # print(kwargs.keys())
-        base_diffusion = GaussianDiffusion(**kwargs)  # pylint: disable=missing-kwoa
+        base_diffusion = GaussianDiffusion(args, **kwargs)  # pylint: disable=missing-kwoa
         last_alpha_cumprod = 1.0
         new_betas = []
         for i, alpha_cumprod in enumerate(base_diffusion.alphas_cumprod):
@@ -934,18 +940,16 @@ class SpacedDiffusion(GaussianDiffusion):
                 last_alpha_cumprod = alpha_cumprod
                 self.timestep_map.append(i)
         kwargs["betas"] = np.array(new_betas)
-        super().__init__(**kwargs)
+        super().__init__(args, **kwargs)
 
     def p_mean_variance(
         self, model, *args, **kwargs
-    ):  # pylint: disable=signature-differs
-        # print('called p_mean_var')
+    ):
         return super().p_mean_variance(self._wrap_model(model), *args, **kwargs)
 
     def training_losses(
         self, model, *args, **kwargs
-    ):  # pylint: disable=signature-differs
-        # print('called training_losses')
+    ):
         return super().training_losses(self._wrap_model(model), *args, **kwargs)
 
     def _wrap_model(self, model):
@@ -967,9 +971,9 @@ class _WrappedModel:
         self.rescale_timesteps = rescale_timesteps
         self.original_num_steps = original_num_steps
 
-    def __call__(self, x, ts, **kwargs):
+    def __call__(self, x, ts, attention_mask, input_ids_kwargs, **kwargs):
         map_tensor = th.tensor(self.timestep_map, device=ts.device, dtype=ts.dtype)
         new_ts = map_tensor[ts]
         if self.rescale_timesteps:
             new_ts = new_ts.float() * (1000.0 / self.original_num_steps)
-        return self.model(x, new_ts, **kwargs)
+        return self.model(x, new_ts, attention_mask, input_ids_kwargs, **kwargs)

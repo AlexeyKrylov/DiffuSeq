@@ -25,7 +25,6 @@ def setup_dist():
         hostname = "localhost"
     else:
         hostname = socket.gethostbyname(socket.getfqdn())
-    print(hostname) # ADD BY ME
 
     if os.environ.get("LOCAL_RANK") is None:
         os.environ["MASTER_ADDR"] = hostname

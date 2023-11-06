@@ -5,18 +5,13 @@ numpy array. This can be used to produce samples for FID evaluation.
 
 import argparse
 import os, json
-from tracemalloc import start
 from tqdm import tqdm
-
 import numpy as np
 import torch as th
 import torch.distributed as dist
 from transformers import set_seed
 from diffuseq.rounding import denoised_fn_round, get_weights
 from diffuseq.text_datasets import load_data_text
-
-# from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
-
 import time
 from diffuseq.utils import dist_util, logger
 from functools import partial
@@ -25,7 +20,6 @@ from basic_utils import (
     create_model_and_diffusion,
     add_dict_to_argparser,
     args_to_dict,
-    load_model_emb,
     load_tokenizer
 )
 
@@ -47,17 +41,34 @@ def main(filename):
     logger.configure()
 
     # load configurations.
-    config_path = "./checkpoint-path/Bert/training_args.json"
+    config_path = args.checkpoint_path + "training_args.json"
     print(config_path)
-    import sys
+
     with open(config_path, 'rb', ) as f:
         training_args = json.load(f)
+
     training_args['batch_size'] = args.batch_size
     args.__dict__.update(training_args)
 
     logger.log("### Creating model and diffusion...")
+
     model, diffusion = create_model_and_diffusion(
-        **args_to_dict(args, load_defaults_config().keys())
+        args=args,
+        hidden_t_dim=args.hidden_t_dim,
+        hidden_dim=args.hidden_dim,
+        vocab_size=args.vocab_size,
+        config_name=args.config_name,
+        use_plm_init=args.use_plm_init,
+        dropout=args.dropout,
+        diffusion_steps=args.diffusion_steps,
+        noise_schedule=args.noise_schedule,
+        learn_sigma=args.learn_sigma,
+        timestep_respacing=args.timestep_respacing,
+        predict_xstart=args.predict_xstart,
+        rescale_timesteps=args.rescale_timesteps,
+        sigma_small=args.sigma_small,
+        rescale_learned_sigmas=args.rescale_learned_sigmas,
+        use_kl=args.use_kl
     )
 
     model.load_state_dict(
@@ -74,8 +85,7 @@ def main(filename):
         model = model.half()
 
     tokenizer = load_tokenizer(args)
-    model_emb, tokenizer = load_model_emb(args, tokenizer)
-
+    model_emb = th.nn.Embedding(tokenizer.vocab_size, args.hidden_dim)
     model_emb.weight = th.nn.Parameter(model.word_embedding.weight.clone().cpu())
 
     if args.use_fp16:
@@ -90,12 +100,12 @@ def main(filename):
     ## load data
     print(args.split)
     data_valid = load_data_text(
-        batch_size=4,
+        batch_size=8,
         seq_len=args.seq_len,
         deterministic=True,
         data_args=args,
         split=args.split,
-        loaded_vocab=tokenizer,        model_emb=model_emb.cpu(), # using the same embedding wight with tranining data
+        loaded_vocab=tokenizer,
         loop=False
     )
 
@@ -120,11 +130,9 @@ def main(filename):
     try:
         while nofb < 4:
         # while True:
-            batch, cond = next(data_valid)
+            cond = next(data_valid)
             all_test_data.append(cond)
             nofb += 1
-
-
     except StopIteration:
         print('### End of reading iteration...')
 
@@ -134,6 +142,7 @@ def main(filename):
         input_ids_x = cond.pop('input_ids').to(dist_util.dev())
         x_start = model.get_embeds(input_ids_x)
         input_ids_mask = cond.pop('input_mask')
+        attention_mask = cond.pop('attention_mask')
         input_ids_mask_ori = input_ids_mask
 
         noise = th.randn_like(x_start)
@@ -170,7 +179,8 @@ def main(filename):
             clamp_first=True,
             mask=input_ids_mask,
             x_start=x_start,
-            gap=step_gap
+            gap=step_gap,
+            attention_mask=attention_mask
         )
 
         model_emb_copy.cpu()
@@ -213,6 +223,7 @@ def main(filename):
             print(json.dumps({"recover": recov, "reference": ref, "source": src}), file=fout)
         fout.close()
         print(score)
+
     print(score)
     print('### Total takes {:.2f}s .....'.format(time.time() - start_t))
     print(f'### Written the decoded output to {out_path}')

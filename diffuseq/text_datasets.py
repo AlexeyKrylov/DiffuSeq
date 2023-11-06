@@ -13,8 +13,7 @@ def load_data_text(
     seq_len, 
     deterministic=False, 
     data_args=None, 
-    model_emb=None,
-    split='train', 
+    split='train',
     loaded_vocab=None,
     loop=True,
     nofb=None,
@@ -36,33 +35,28 @@ def load_data_text(
     :param loop: loop to get batch data or not.
     """
 
-    print('#'*30, '\nLoading text data...')
-
     training_data = get_corpus(data_args, seq_len, split=split, loaded_vocab=loaded_vocab, nofs=nofs)
 
     dataset = TextDataset(
         training_data,
-        data_args,
-        model_emb=model_emb
+        data_args
     )
 
     data_loader = DataLoader(
         dataset,
-        batch_size=batch_size,  # 20,
-        # drop_last=True,
+        batch_size=batch_size,
+        drop_last=data_args.drop_last,
         shuffle=not deterministic,
         num_workers=0,
     )
     if loop:
-        # return infinite_loader([next(iter(data_loader))])
         return infinite_loader(data_loader)
 
     else:
-        # print(data_loader)
         if nofb is None:
             return iter(data_loader)
-        res_iter = list()
 
+        res_iter = list()
         iter_dataloader = iter(data_loader)
         while nofb > 0:
             nofb -= 1
@@ -73,12 +67,8 @@ def infinite_loader(data_loader):
     while True:
         yield from data_loader
 
-def helper_tokenize(sentence_lst, vocab_dict, seq_len):
-    # Process.memory_info is expressed in bytes, so convert to megabytes
-    print(f"RAM used: {psutil.Process().memory_info().rss / (1024 * 1024):.2f} MB")
+def helper_tokenize(data_args, sentence_lst, vocab_dict, seq_len):
     raw_datasets = Dataset2.from_dict(sentence_lst)
-    print(raw_datasets)
-    print(f"RAM used: {psutil.Process().memory_info().rss / (1024 * 1024):.2f} MB")
 
     def tokenize_function(examples):
         input_id_x = vocab_dict.encode_token(examples['src'])
@@ -95,9 +85,6 @@ def helper_tokenize(sentence_lst, vocab_dict, seq_len):
         load_from_cache_file=True,
         desc="Running tokenizer on dataset",
     )
-    print('### tokenized_datasets', tokenized_datasets)
-
-    print(f"RAM used: {psutil.Process().memory_info().rss / (1024 * 1024):.2f} MB")
 
     def merge_and_mask(group_lst):
         lst = []
@@ -121,9 +108,12 @@ def helper_tokenize(sentence_lst, vocab_dict, seq_len):
             mask.append([0]*(len(src)+1))
         group_lst['input_ids'] = lst
         group_lst['input_mask'] = mask
-        print('-'*120)
-        print(max([len(i) for i in lst]))
-        print('-'*120)
+
+        if data_args.debug_mode:
+            print('-'*120)
+            print("Max length of sequence in each thousand of examples: ", max([len(i) for i in lst]))
+            print('-'*120)
+
         return group_lst
     
     tokenized_datasets = tokenized_datasets.map(
@@ -135,11 +125,10 @@ def helper_tokenize(sentence_lst, vocab_dict, seq_len):
     
     def pad_function(group_lst):
         max_length = seq_len
-        group_lst['input_ids'] = _collate_batch_helper(group_lst['input_ids'], vocab_dict.pad_token_id, max_length)
+        group_lst['input_ids'], pad_mask = _collate_batch_helper(group_lst['input_ids'], vocab_dict.pad_token_id, max_length, return_mask=True)
         group_lst['input_mask'] = _collate_batch_helper(group_lst['input_mask'], 1, max_length)
+        group_lst["pad_mask"] = pad_mask
         return group_lst
-
-    print(f"RAM used: {psutil.Process().memory_info().rss / (1024 * 1024):.2f} MB")
 
     lm_datasets = tokenized_datasets.map(
         pad_function,
@@ -148,17 +137,15 @@ def helper_tokenize(sentence_lst, vocab_dict, seq_len):
         desc=f"padding",
     )
 
-    print(lm_datasets, 'padded dataset')
-    print('### tokenized_datasets...example X', lm_datasets['input_id_x'][0])
-    print('### tokenized_datasets...example Y', lm_datasets['input_id_y'][0])
-    print('### tokenized_datasets...example ids', lm_datasets['input_ids'][0])
-    print('### tokenized_datasets...example mask', lm_datasets['input_mask'][0])
-
-    print(f"RAM used: {psutil.Process().memory_info().rss / (1024 * 1024):.2f} MB")
+    if data_args.debug_mode:
+        print(lm_datasets, 'padded dataset')
+        print('### tokenized_datasets...example X', lm_datasets['input_id_x'][0])
+        print('### tokenized_datasets...example Y', lm_datasets['input_id_y'][0])
+        print('### tokenized_datasets...example ids', lm_datasets['input_ids'][0])
+        print('### tokenized_datasets...example mask', lm_datasets['input_mask'][0])
 
     raw_datasets = datasets.DatasetDict()
     raw_datasets['train'] = lm_datasets
-    print(f"RAM used: {psutil.Process().memory_info().rss / (1024 * 1024):.2f} MB")
     return raw_datasets
 
 
@@ -167,18 +154,22 @@ def get_corpus(data_args, seq_len, split='train', loaded_vocab=None, nofs=None):
     if nofs is None:
         nofs = 999999
 
-    print('#'*30, '\nLoading dataset {} from {}...'.format(data_args.dataset, data_args.data_dir))
+    if data_args.debug_mode:
+        print('#'*30, '\nLoading dataset')
 
     sentence_lst = {'src':[], 'trg': []}
     
     if split == 'train':
-        print('### Loading form the TRAIN set...')
+        if data_args.debug_mode:
+            print('### Loading form the TRAIN set...')
         path = f'{data_args.data_dir}/train.jsonl'
     elif split == 'valid':
-        print('### Loading form the VALID set...')
+        if data_args.debug_mode:
+            print('### Loading form the VALID set...')
         path = f'{data_args.data_dir}/valid.jsonl'
     elif split == 'test':
-        print('### Loading form the TEST set...')
+        if data_args.debug_mode:
+            print('### Loading form the TEST set...')
         path = f'{data_args.data_dir}/test.jsonl'
     else:
         assert False, "invalid split for dataset"
@@ -187,46 +178,38 @@ def get_corpus(data_args, seq_len, split='train', loaded_vocab=None, nofs=None):
         for row in f_reader:
             sentence_lst['src'].append(json.loads(row)['src'].strip())
             sentence_lst['trg'].append(json.loads(row)['trg'].strip())
-
             nofs -= 1
-
             if nofs <= 0:
                 break
 
-    print('### Data samples...\n', sentence_lst['src'][:2], sentence_lst['trg'][:2])
+    if data_args.debug_mode:
+        print('### Data samples...\n', sentence_lst['src'][:2], sentence_lst['trg'][:2])
         
-    # get tokenizer.
     vocab_dict = loaded_vocab
 
-    train_dataset = helper_tokenize(sentence_lst, vocab_dict, seq_len)
+    train_dataset = helper_tokenize(data_args, sentence_lst, vocab_dict, seq_len)
     return train_dataset
 
 
 class TextDataset(Dataset):
-    def __init__(self, text_datasets, data_args, model_emb=None):
+    def __init__(self, text_datasets, data_args):
         super().__init__()
         self.text_datasets = text_datasets
         self.length = len(self.text_datasets['train'])
         self.data_args = data_args
-        self.model_emb = model_emb
 
     def __len__(self):
         return self.length
 
     def __getitem__(self, idx):
         with torch.no_grad():
-
-            input_ids = self.text_datasets['train'][idx]['input_ids']
-            hidden_state = self.model_emb(torch.tensor(input_ids))
-
-            # obtain the input vectors, only used when word embedding is fixed (not trained end-to-end)
-            arr = np.array(hidden_state, dtype=np.float32)
-
             out_kwargs = {}
             out_kwargs['input_ids'] = np.array(self.text_datasets['train'][idx]['input_ids'])
             out_kwargs['input_mask'] = np.array(self.text_datasets['train'][idx]['input_mask'])
+            out_kwargs['attention_mask'] = np.array(self.text_datasets['train'][idx]['pad_mask'])
 
-            return arr, out_kwargs
+            return out_kwargs
+
 
 def _collate_batch_helper(examples, pad_token_id, max_length, return_mask=False):
     result = torch.full([len(examples), max_length], pad_token_id, dtype=torch.int64).tolist()
