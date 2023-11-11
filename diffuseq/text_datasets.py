@@ -112,6 +112,7 @@ def helper_tokenize(data_args, sentence_lst, vocab_dict, seq_len):
         if data_args.debug_mode:
             print('-'*120)
             print("Max length of sequence in each thousand of examples: ", max([len(i) for i in lst]))
+            print("Decentiles length of sequence in each thousand of examples: ", sorted([len(i) for i in lst])[len(lst) // 10::len(lst) // 10])
             print('-'*120)
 
         return group_lst

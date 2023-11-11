@@ -1,11 +1,13 @@
 import argparse
-import torch
+from tokenizers import SentencePieceBPETokenizer
 import json, os
 from diffuseq import gaussian_diffusion as gd
 from diffuseq.gaussian_diffusion import SpacedDiffusion, space_timesteps
 from diffuseq.transformer_model import TransformerNetModel
 from transformers import AutoTokenizer
 import pickle
+import pandas as pd
+
 
 
 class myTokenizer():
@@ -28,52 +30,40 @@ class myTokenizer():
         self.tokenizer = tokenizer
 
         list_of_add_toks = [
-                            ' FROM',
-                            ' AS',
-                            'SELECT', 'select',
-                            ' JOIN',
-                            ' ON',
-                            ' WHERE',
-                            ' T1', ' t1',
-                            ' T2', ' t2',
-                            ' T3', ' t3',
-                            ' T4', ' t4',
-                            ' T5', ' t5',
-                            ' GROUP BY',
-                            ' ORDER BY',
-                            ' AND',
-                            ' DISTINCT',
-                            ' DESC', ' desc',
-                            ' LIMIT',
-                            ' COUNT',
-                            ' HAVING',
-                            ' IN',
-                            ' LIKE',
-                            ' INTERSECT',
-                            ' NOT',
-                            ' OR',
-                            ' ASC', ' asc',
-                            ' MAX', ' max'
-                            ' AVG', ' avg',
-                            ' EXCEPT',
-                            ' MIN', ' min',
-                            ' BETWEEN',
-                            ' UNION',
-                            ' CAST',
-                            ' SUM',
-                            '[question]', ' ,',
-                            ' [schema]', ' :',
-                            ' [SEP_SCHEMS]'
-                            ]
+            '▁SELECT', 'SELECT', '▁(SELECT',
+            '▁T1', '▁T1.', '▁t1.', '▁t1',
+            '▁T2', '▁T2.', '▁t2.', '▁t2',
+            '▁T3', '▁T3.', '▁t3.', '▁t3',
+            '▁T4', '▁T4.', '▁t4.', '▁t4',
+            '▁T5', '▁T5.', '▁t5.', '▁t5',
+            '▁[SEP_SCHEMS]', '[question]', '▁[schema]',
+            '▁GROUP BY', '▁ORDER BY', 'DISTINCT', '▁DISTINCT', '▁IN'
+             '▁LOCATION', '▁LENGTH', '▁HAVING', '▁LIMIT', '▁JOIN',
+            '▁WHERE', '▁EXCEPT', '▁INTERSECT', '▁BETWEEN', '▁CAST', '▁UNION',
+            '▁LIKE', '▁DESC', '▁ASC', '▁AND', '▁OR', '▁NOT',
+            '▁COUNT(*)', '▁count(*)', '▁COUNT',
+            '▁sum(', '▁avg(', '▁max(', '▁min(', '▁count('
+
+                                                    ,'▁)', '▁<', '▁>', '▁=', '<', '>', '=', '▁!', '!', '(*)', "▁'",
+            '▁,', '▁:', '_ID', '_id']
 
         if args.add_query_toks_path:
             with open(args.data_dir + args.add_query_toks_path, "r", encoding='utf8') as f:
                 data = json.load(f)
 
-            for i in data:
-                list_of_add_toks.extend(i["query_toks"])
+            tokenizer_add = SentencePieceBPETokenizer()
 
-        self.tokenizer.add_tokens(list_of_add_toks)
+            tokenizer_add.train_from_iterator(
+                [i["query"][:-1] for i in data],
+                vocab_size=args.number_of_add_tokens,
+                min_frequency=args.minfreq_of_add_tokens,
+                show_progress=args.debug_mode,
+                # limit_alphabet=5000,
+            )
+
+            list_of_add_toks += list(tokenizer_add.get_vocab().keys())
+
+        self.tokenizer.add_tokens(list(list_of_add_toks))
 
         if args.debug_mode:
             print("Number of tokens in tokenizer after adding tokens: ", len(tokenizer.get_vocab()))

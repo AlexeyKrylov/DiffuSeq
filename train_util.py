@@ -341,6 +341,7 @@ class TrainLoop:
         lr = self.lr * (1 - frac_done)
         for param_group in self.opt.param_groups:
             param_group["lr"] = lr
+        logger.logkv("learning_rate", lr)
 
     def log_step(self):
         logger.logkv("step", self.step + self.resume_step)

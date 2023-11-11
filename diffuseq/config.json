@@ -8,14 +8,14 @@
 
   "optimizer" : "Adafactor",
   "lr": 0.0001,
-  "weight_decay": 0.001,
-  "batch_size": 256,
-  "microbatch": 32,
-  "learning_steps": 500000,
+  "weight_decay": 0.01,
+  "batch_size": 64,
+  "microbatch": 64,
+  "learning_steps": 160000,
 
-  "log_interval": 240,
-  "save_interval": 8000,
-  "eval_interval": 800,
+  "log_interval": 960,
+  "save_interval": 16000,
+  "eval_interval": 3200,
   "ema_rate": "0.9999",
   "resume_checkpoint": false,
   "resume_step": 0,
@@ -27,9 +27,11 @@
 
   "drop_last" : false,
   "add_query_toks_path" : false,
+  "number_of_add_tokens" : 1000,
+  "minfreq_of_add_tokens" : 20,
   "vocab": "t5",
   "use_plm_init": "no",
-  "config_name": "bert-base-cased",
+  "config_name": "smallbenchnlp/bert-small",
   "tokenizer_config" : "t5-base",
   "save_tokenizer" : false,
 
@@ -38,8 +40,8 @@
 
   "token_type_embeddings" : false,
   "seq_len": 512,
-  "hidden_t_dim": 128,
-  "hidden_dim": 128,
+  "hidden_t_dim": 256,
+  "hidden_dim": 256,
   "dropout": 0.1,
 
   "use_fp16": true,
