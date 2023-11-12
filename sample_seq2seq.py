@@ -230,6 +230,6 @@ def main(filename):
 
 
 if __name__ == "__main__":
-    main("model032000")
-    # main("ema_0.9999_160000")
+    main("model010000")
+    # main("ema_0.9999_010000")
 

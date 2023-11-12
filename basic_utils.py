@@ -1,13 +1,11 @@
 import argparse
 from tokenizers import SentencePieceBPETokenizer
-import json, os
+import json
 from diffuseq import gaussian_diffusion as gd
 from diffuseq.gaussian_diffusion import SpacedDiffusion, space_timesteps
 from diffuseq.transformer_model import TransformerNetModel
 from transformers import AutoTokenizer
 import pickle
-import pandas as pd
-
 
 
 class myTokenizer():
@@ -29,23 +27,73 @@ class myTokenizer():
 
         self.tokenizer = tokenizer
 
-        list_of_add_toks = [
-            '▁SELECT', 'SELECT', '▁(SELECT',
-            '▁T1', '▁T1.', '▁t1.', '▁t1',
-            '▁T2', '▁T2.', '▁t2.', '▁t2',
-            '▁T3', '▁T3.', '▁t3.', '▁t3',
-            '▁T4', '▁T4.', '▁t4.', '▁t4',
-            '▁T5', '▁T5.', '▁t5.', '▁t5',
-            '▁[SEP_SCHEMS]', '[question]', '▁[schema]',
-            '▁GROUP BY', '▁ORDER BY', 'DISTINCT', '▁DISTINCT', '▁IN'
-             '▁LOCATION', '▁LENGTH', '▁HAVING', '▁LIMIT', '▁JOIN',
-            '▁WHERE', '▁EXCEPT', '▁INTERSECT', '▁BETWEEN', '▁CAST', '▁UNION',
-            '▁LIKE', '▁DESC', '▁ASC', '▁AND', '▁OR', '▁NOT',
-            '▁COUNT(*)', '▁count(*)', '▁COUNT',
-            '▁sum(', '▁avg(', '▁max(', '▁min(', '▁count('
+        if args.vocab == 'bert':
+            self.sep_token_id = 102
+            self.pad_token_id = 0
 
-                                                    ,'▁)', '▁<', '▁>', '▁=', '<', '>', '=', '▁!', '!', '(*)', "▁'",
-            '▁,', '▁:', '_ID', '_id']
+            list_of_add_toks = [
+                'SELECT', '(SELECT',
+                'T1', 'T1.', 't1.', 't1',
+                'T2', 'T2.', 't2.', 't2',
+                'T3', 'T3.', 't3.', 't3',
+                'T4', 'T4.', 't4.', 't4',
+                'T5', 'T5.', 't5.', 't5',
+                '[SEP_SCHEMS]', '[question]', '[schema]',
+                'GROUP', 'ORDER', 'BY', 'DISTINCT', 'DISTINCT', 'IN'
+                                                                   'LOCATION', 'LENGTH', 'HAVING', 'LIMIT', 'JOIN',
+                'WHERE', 'EXCEPT', 'INTERSECT', 'BETWEEN', 'CAST', 'UNION',
+                'LIKE', 'DESC', 'ASC', 'AND', 'OR', 'NOT',
+                'COUNT(*)', 'count(*)', 'COUNT',
+                'sum(', 'avg(', 'max(', 'min(', 'count('
+                , ')', '<', '>', '=', '<', '>', '=', '!', '!', '(*)', "'",
+                ',', ':', '_ID', '_id']
+
+        elif args.vocab == 'roberta':
+            self.pad_token_id = 1# 0
+
+            # list_of_add_toks = [
+            #     '[SEP_SCHEMS]', '[question]', '[schema]',
+            #     '<', '<=', '[SEP]']
+
+            list_of_add_toks = [
+                'SELECT', '(SELECT',
+                'T1', 'T1.', 't1.', 't1',
+                'T2', 'T2.', 't2.', 't2',
+                'T3', 'T3.', 't3.', 't3',
+                'T4', 'T4.', 't4.', 't4',
+                'T5', 'T5.', 't5.', 't5',
+                '[SEP_SCHEMS]', '[question]', '[schema]',
+                'GROUP BY', 'ORDER BY', 'DISTINCT', 'DISTINCT', 'IN',
+                'LOCATION', 'LENGTH', 'HAVING', 'LIMIT', 'JOIN',
+                'WHERE', 'EXCEPT', 'INTERSECT', 'BETWEEN', 'CAST', 'UNION',
+                'LIKE', 'DESC', 'ASC', 'AND', 'OR', 'NOT',
+                'COUNT(*)', 'count(*)', 'COUNT',
+                'sum(', 'avg(', 'max(', 'min(', 'count('
+                , ')', '=', '<', '>', '=', '!', '!', '(*)', "'",
+                ',', ':', '_ID', '_id', '[SEP]']
+
+        elif args.vocab == 'SentencePiece':
+            self.pad_token_id = 0
+
+            list_of_add_toks = [
+                '▁SELECT', 'SELECT', '▁(SELECT',
+                '▁T1', '▁T1.', '▁t1.', '▁t1',
+                '▁T2', '▁T2.', '▁t2.', '▁t2',
+                '▁T3', '▁T3.', '▁t3.', '▁t3',
+                '▁T4', '▁T4.', '▁t4.', '▁t4',
+                '▁T5', '▁T5.', '▁t5.', '▁t5',
+                '▁[SEP_SCHEMS]', '[question]', '▁[schema]',
+                '▁GROUP BY', '▁ORDER BY', 'DISTINCT', '▁DISTINCT', '▁IN'
+                                                                   '▁LOCATION', '▁LENGTH', '▁HAVING', '▁LIMIT', '▁JOIN',
+                '▁WHERE', '▁EXCEPT', '▁INTERSECT', '▁BETWEEN', '▁CAST', '▁UNION',
+                '▁LIKE', '▁DESC', '▁ASC', '▁AND', '▁OR', '▁NOT',
+                '▁COUNT(*)', '▁count(*)', '▁COUNT',
+                '▁sum(', '▁avg(', '▁max(', '▁min(', '▁count('
+
+                , '▁)', '▁<', '▁>', '▁=', '<', '>', '=', '▁!', '!', '(*)', "▁'",
+                '▁,', '▁:', '_ID', '_id' , '[SEP]']
+        else:
+            raise ValueError
 
         if args.add_query_toks_path:
             with open(args.data_dir + args.add_query_toks_path, "r", encoding='utf8') as f:
@@ -65,23 +113,18 @@ class myTokenizer():
 
         self.tokenizer.add_tokens(list(list_of_add_toks))
 
+        self.sep_token_id = self.tokenizer('[SEP]', add_special_tokens=True)['input_ids'][1]
+
+        if self.args.debug_mode:
+            print("Id of [SEP] token: ", self.sep_token_id)
+
+
         if args.debug_mode:
             print("Number of tokens in tokenizer after adding tokens: ", len(tokenizer.get_vocab()))
 
         if args.save_tokenizer:
             with open(args.checkpoint_path + "tokenizer.pkl", "wb") as f:
                 pickle.dump(self.tokenizer, f)
-
-        if args.vocab == 'bert':
-            self.sep_token_id = 102
-            self.pad_token_id = 0
-
-        elif args.vocab == 't5':
-            self.sep_token_id = 1
-            self.pad_token_id = 0
-
-        else:
-            raise ValueError
 
         self.vocab_size = len(self.tokenizer.get_vocab())
         args.vocab_size = self.vocab_size # update vocab size in args

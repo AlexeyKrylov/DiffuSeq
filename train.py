@@ -24,6 +24,7 @@ def wandb_set(mode, key):
     os.environ["WANDB_API_KEY"] = key
     os.environ["WANDB_MODE"] = mode
     os.environ["PL_TORCH_DISTRIBUTED_BACKEND"] = "gloo"
+    os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 def create_argparser():
     defaults = dict()

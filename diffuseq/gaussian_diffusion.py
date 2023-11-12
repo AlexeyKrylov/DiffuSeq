@@ -324,7 +324,7 @@ class GaussianDiffusion:
 
         def process_xstart(x):
             if denoised_fn is not None:
-                x = denoised_fn(x, t)
+                x = denoised_fn(x, t, global_model=model)
             if clip_denoised:
                 return x.clamp(-1, 1)
             return x
@@ -466,7 +466,8 @@ class GaussianDiffusion:
             x_start=x_start,
             attention_mask=attention_mask
         ):
-            final.append(sample['sample'])
+            # final.append(sample['sample'])
+            final = [sample['sample']]
         return final
 
     def p_sample_loop_progressive(
@@ -647,9 +648,10 @@ class GaussianDiffusion:
 
         decoder_nll = self._token_discrete_loss(x_start, get_logits, input_ids_x) # embedding regularization
         terms["nll"] = self._token_discrete_loss(model_out_x_start, get_logits, input_ids_x, mask=input_ids_mask, truncate=True, t=t) # x_0->model_out_x_start
-        assert (model.model.module.lm_head.weight == model.model.module.word_embedding.weight).all()
-
-        terms["loss"] = terms["mse"] + decoder_nll + tT_loss
+        # assert (model.model.module.lm_head.weight == model.model.module.word_embedding.weight).all()
+        terms["decoder_nll"] = decoder_nll
+        terms["tT_loss"] = tT_loss
+        terms["loss"] = terms["mse"] + tT_loss + terms["nll"]
 
         return terms
 

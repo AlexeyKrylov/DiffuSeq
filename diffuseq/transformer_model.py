@@ -2,11 +2,9 @@ from transformers import AutoConfig
 from transformers.models.bert.modeling_bert import BertEncoder, BertModel, BertForMaskedLM
 from transformers.models.deberta.modeling_deberta import DebertaEncoder, DebertaModel
 import torch
-from transformers import T5ForConditionalGeneration
-import numpy as np
+from transformers import T5EncoderModel, RobertaForCausalLM
 import torch as th
 import torch.nn as nn
-import torch.nn.functional as F
 
 from .utils.nn import (
     SiLU,
@@ -62,8 +60,10 @@ class TransformerNetModel(nn.Module):
             self.src_flag_emb = nn.Embedding(2, config.hidden_size)
 
         self.lm_head = nn.Linear(self.input_dims, vocab_size)
-        with th.no_grad():
-            self.lm_head.weight = self.word_embedding.weight
+
+        if not self.args.trainable_lm_head:
+            with th.no_grad():
+                self.lm_head.weight = self.word_embedding.weight
 
         time_embed_dim = hidden_t_dim * 4
         self.time_embed = nn.Sequential(
@@ -81,18 +81,24 @@ class TransformerNetModel(nn.Module):
                 print('initializing from pretrained t5...')
                 print(config)
 
-            temp_t5 = T5ForConditionalGeneration.from_pretrained(self.config_name)
-            temp_t5.resize_token_embeddings(self.args.vocab_size)
+            embs = T5EncoderModel.from_pretrained(self.config_name)
+            embs.set_input_embeddings(embs.shared)
+            embs.resize_token_embeddings(self.args.vocab_size)
+            self.word_embedding.from_pretrained(embs.shared.weight.clone(), freeze=False)
 
-            self.word_embedding = temp_t5.encoder.embed_tokens
+            del embs.encoder
 
-            with torch.no_grad():
-                self.lm_head.weight = self.word_embedding.weight
+            temp_t5 = T5EncoderModel(config)
+
+            if not self.args.trainable_lm_head:
+                with torch.no_grad():
+                    self.lm_head.weight = self.word_embedding.weight
 
             self.input_transformers = temp_t5.encoder
 
             del temp_t5.shared
-            del temp_t5.decoder
+            del temp_t5.encoder.embed_tokens
+            del embs.shared
 
         elif init_pretrained == 'bert_full':
 
@@ -104,13 +110,15 @@ class TransformerNetModel(nn.Module):
             temp_bert.resize_token_embeddings(self.args.vocab_size)
 
             self.word_embedding = temp_bert.bert.embeddings.word_embeddings
-
-            with torch.no_grad():
-                self.lm_head.weight = temp_bert.bert.embeddings.word_embeddings.weight
+            if not self.args.trainable_lm_head:
+                with torch.no_grad():
+                    self.lm_head.weight = temp_bert.bert.embeddings.word_embeddings.weight
+            else:
+                self.lm_head = temp_bert.cls
 
             self.input_transformers = temp_bert.bert.encoder
 
-            self.register_buffer("position_ids", torch.arange(512).expand((1, -1)))
+            self.register_buffer("position_ids", torch.arange(self.args.seq_len).expand((1, -1)))
             self.position_embeddings = temp_bert.bert.embeddings.position_embeddings
 
             if self.args.token_type_embeddings:
@@ -121,7 +129,47 @@ class TransformerNetModel(nn.Module):
             if not self.args.token_type_embeddings:
                 del temp_bert.bert.embeddings.token_type_embeddings
 
-        elif init_pretrained == 'no':
+        elif init_pretrained == 'roberta_full':
+
+            if args.debug_mode:
+                print('initializing from pretrained bert...')
+                print(config)
+
+            temp_bert = RobertaForCausalLM.from_pretrained(self.config_name, is_decoder=True)
+            temp_bert.resize_token_embeddings(self.args.vocab_size)
+
+            self.word_embedding = temp_bert.roberta.embeddings.word_embeddings
+            if not self.args.trainable_lm_head:
+                with torch.no_grad():
+                    self.lm_head.weight = temp_bert.roberta.embeddings.word_embeddings.weight
+            else:
+                self.lm_head = temp_bert.lm_head
+
+            self.input_transformers = temp_bert.roberta.encoder
+
+            self.register_buffer("position_ids", torch.arange(514).expand((1, -1)))
+            self.position_embeddings = temp_bert.roberta.embeddings.position_embeddings
+
+            if self.args.token_type_embeddings:
+                self.src_flag_emb = temp_bert.roberta.embeddings.token_type_embeddings
+
+            self.LayerNorm = temp_bert.roberta.embeddings.LayerNorm
+
+            if not self.args.token_type_embeddings:
+                del temp_bert.roberta.embeddings.token_type_embeddings
+
+        elif init_pretrained == 'no_bert+t5_emb':
+            embs = T5EncoderModel.from_pretrained(self.config_name)
+            embs.set_input_embeddings(embs.shared)
+            embs.resize_token_embeddings(self.args.vocab_size)
+            self.word_embedding.from_pretrained(embs.shared.weight.clone(), freeze=False)
+            del embs.encoder
+            del embs.shared
+
+            if not self.args.trainable_lm_head:
+                with torch.no_grad():
+                    self.lm_head.weight = self.word_embedding.weight
+
             self.input_transformers = BertEncoder(config)
 
             self.register_buffer("position_ids", torch.arange(config.max_position_embeddings).expand((1, -1)))
@@ -129,6 +177,21 @@ class TransformerNetModel(nn.Module):
             self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
             self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
+        elif init_pretrained == 'no_bert':
+            self.input_transformers = BertEncoder(config)
+
+            self.register_buffer("position_ids", torch.arange(config.max_position_embeddings).expand((1, -1)))
+
+            self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
+            self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+
+        elif init_pretrained == 'no_t5':
+            temp_t5 = T5EncoderModel(config)
+
+            self.input_transformers = temp_t5.encoder
+
+            del temp_t5.shared
+            del temp_t5.encoder.embed_tokens
         else:
             assert False, "invalid type of init_pretrained"
 
@@ -165,7 +228,7 @@ class TransformerNetModel(nn.Module):
 
         seq_length = x.size(1)
 
-        if self.args.use_plm_init[:2] != "t5":
+        if self.args.use_plm_init[:2] != "t5" and self.args.use_plm_init[:5] != "no_t5":
             position_ids = self.position_ids[:, : seq_length]
             emb_inputs = self.position_embeddings(position_ids) + emb_x + emb_t.unsqueeze(1).expand(-1, seq_length, -1)
         else:
@@ -177,7 +240,7 @@ class TransformerNetModel(nn.Module):
 
 
 
-        if self.args.use_plm_init[:2] != "t5":
+        if self.args.use_plm_init[:2] != "t5" and self.args.use_plm_init[:5] != "no_t5":
             emb_inputs = self.dropout(self.LayerNorm(emb_inputs))
             input_trans_hidden_states = self.input_transformers(emb_inputs).last_hidden_state
         else:

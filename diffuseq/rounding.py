@@ -88,19 +88,25 @@ def get_weights(model, args):
     model.weight.requires_grad = False
     return model
 
-def denoised_fn_round(args, model, text_emb, t):
+def denoised_fn_round(args, model, text_emb, t, global_model=False):
     # print(text_emb.shape) # bsz, seqlen, dim
-    model_emb = model.weight  # input_embs
-    # print(t)
     old_shape = text_emb.shape
     old_device = text_emb.device
 
-    if len(text_emb.shape) > 2:
-        text_emb = text_emb.reshape(-1, text_emb.size(-1))
+    # global_model = False
+
+    if global_model:
+        logits = global_model.model.get_logits(text_emb)
+        rounded_tokens = logits.argmax(axis=-1)
     else:
-        text_emb = text_emb
-    val, indices = get_efficient_knn(model_emb, text_emb.to(model_emb.device))
-    rounded_tokens = indices[0]
+        model_emb = model.weight  # input_embs
+
+        if len(text_emb.shape) > 2:
+            text_emb = text_emb.reshape(-1, text_emb.size(-1))
+        else:
+            text_emb = text_emb
+        val, indices = get_efficient_knn(model_emb, text_emb.to(model_emb.device))
+        rounded_tokens = indices[0]
     # print(rounded_tokens.shape)
     new_embeds = model(rounded_tokens).view(old_shape).to(old_device)
 
