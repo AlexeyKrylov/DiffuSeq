@@ -624,7 +624,7 @@ class GaussianDiffusion:
         x_start = self._get_x_start(x_start_mean, std, kind_of_type) # add noise
         # print(x_start_mean.shape, x_start.shape)
         if noise is None:
-            noise = th.randn_like(x_start)
+            noise = th.randn_like(x_start) * self.args.noise_factor
 
         x_t = self.q_sample(x_start, t, noise=noise, mask=input_ids_mask, type=kind_of_type) # reparametrization trick.
 
@@ -639,19 +639,25 @@ class GaussianDiffusion:
 
         model_out_x_start = self._x0_helper(model_output, x_t, t, kind_of_type)['pred_xstart'] # predicted_xstart = model_output
         t0_mask = (t == 0)
+        # t0_mask = (t >= 0)
         t0_loss = mean_flat((x_start_mean - model_out_x_start) ** 2)
         terms["mse"] = th.where(t0_mask, t0_loss, terms["mse"])
 
         # tT_mask = (t == self.num_timesteps - 1)
         out_mean, _, _ = self.q_mean_variance(x_start, th.LongTensor([self.num_timesteps - 1]).to(x_start.device), kind_of_type)
-        tT_loss =  mean_flat(out_mean ** 2)
+        tT_loss = mean_flat(out_mean ** 2)
 
         decoder_nll = self._token_discrete_loss(x_start, get_logits, input_ids_x) # embedding regularization
         terms["nll"] = self._token_discrete_loss(model_out_x_start, get_logits, input_ids_x, mask=input_ids_mask, truncate=True, t=t) # x_0->model_out_x_start
         # assert (model.model.module.lm_head.weight == model.model.module.word_embedding.weight).all()
         terms["decoder_nll"] = decoder_nll
         terms["tT_loss"] = tT_loss
-        terms["loss"] = terms["mse"] + tT_loss + terms["nll"]
+        # terms["loss"] = terms["mse"] + tT_loss + terms["nll"]
+
+
+        terms["loss"] = terms["mse"] + tT_loss + decoder_nll
+        if self.args.anchor_loss:
+            terms["loss"] = terms["nll"] + terms["mse"] + tT_loss
 
         return terms
 

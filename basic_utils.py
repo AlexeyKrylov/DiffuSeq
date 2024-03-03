@@ -18,12 +18,23 @@ class myTokenizer():
     def __init__(self, args):
         self.args = args
 
+        # def normalize(query: str) -> str:
+        #     def comma_fix(s):
+        #         # Remove spaces in front of commas
+        #         return s.replace(" , ", ", ")
+        #
+        #     def white_space_fix(s):
+        #         # Remove double and triple spaces
+        #         return " ".join(s.split())
+        #
+        #     def lower(s):
+        #         # Convert everything except text between (single or double) quotation marks to lower case
+        #         return re.sub(r"\b(?<!['\"])(\w+)(?!['\"])\b", lambda match: match.group(1).lower(), s)
+        #
+        #     return comma_fix(white_space_fix(lower(query)))
+
         tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_config)
 
-        if args.debug_mode:
-            print(args.config_name)
-            print("Number of tokens in tokenizer: ", len(tokenizer.get_vocab()))
-            print(sorted(list(tokenizer.get_vocab().items()), key=lambda x : x[1])[:20])
 
         self.tokenizer = tokenizer
 
@@ -75,23 +86,38 @@ class myTokenizer():
         elif args.vocab == 'SentencePiece':
             self.pad_token_id = 0
 
-            list_of_add_toks = [
-                '▁SELECT', 'SELECT', '▁(SELECT',
-                '▁T1', '▁T1.', '▁t1.', '▁t1',
-                '▁T2', '▁T2.', '▁t2.', '▁t2',
-                '▁T3', '▁T3.', '▁t3.', '▁t3',
-                '▁T4', '▁T4.', '▁t4.', '▁t4',
-                '▁T5', '▁T5.', '▁t5.', '▁t5',
-                '▁[SEP_SCHEMS]', '[question]', '▁[schema]',
-                '▁GROUP BY', '▁ORDER BY', 'DISTINCT', '▁DISTINCT', '▁IN'
-                                                                   '▁LOCATION', '▁LENGTH', '▁HAVING', '▁LIMIT', '▁JOIN',
-                '▁WHERE', '▁EXCEPT', '▁INTERSECT', '▁BETWEEN', '▁CAST', '▁UNION',
-                '▁LIKE', '▁DESC', '▁ASC', '▁AND', '▁OR', '▁NOT',
-                '▁COUNT(*)', '▁count(*)', '▁COUNT',
-                '▁sum(', '▁avg(', '▁max(', '▁min(', '▁count('
+            # list_of_add_toks = [
+                # '[SEP_SCHEMS]',
+                # '[question]',
+                # '[schema]',
+                # '<', '<=', '[SEP]']
+            special_tokens_dict = {'additional_special_tokens': ['<PAGESTART>', '<PAGEEND>', '<SECTIONSTART>',
+                                                                 '<SECTIONEND>',
+                                                                 '<TABLESTART>', '<TABLEEND>', '<CELLSTART>',
+                                                                 '<CELLEND>',
+                                                                 '<COLHEADERSTART>',
+                                                                 '<COLHEADEREND>', '<ROWHEADERSTART>',
+                                                                 '<ROWHEADEREND>', '[SEP]']}
 
-                , '▁)', '▁<', '▁>', '▁=', '<', '>', '=', '▁!', '!', '(*)', "▁'",
-                '▁,', '▁:', '_ID', '_id' , '[SEP]']
+            num_added_toks = self.tokenizer.add_special_tokens(special_tokens_dict)
+
+            # list_of_add_toks = [
+            #     '▁SELECT', 'SELECT', '▁(SELECT',
+            #     '▁T1', '▁T1.', '▁t1.', '▁t1',
+            #     '▁T2', '▁T2.', '▁t2.', '▁t2',
+            #     '▁T3', '▁T3.', '▁t3.', '▁t3',
+            #     '▁T4', '▁T4.', '▁t4.', '▁t4',
+            #     '▁T5', '▁T5.', '▁t5.', '▁t5',
+            #     '▁[SEP_SCHEMS]', '[question]', '▁[schema]',
+            #     '▁GROUP BY', '▁ORDER BY', 'DISTINCT', '▁DISTINCT', '▁IN'
+            #                                                        '▁LOCATION', '▁LENGTH', '▁HAVING', '▁LIMIT', '▁JOIN',
+            #     '▁WHERE', '▁EXCEPT', '▁INTERSECT', '▁BETWEEN', '▁CAST', '▁UNION',
+            #     '▁LIKE', '▁DESC', '▁ASC', '▁AND', '▁OR', '▁NOT',
+            #     '▁COUNT(*)', '▁count(*)', '▁COUNT',
+            #     '▁sum(', '▁avg(', '▁max(', '▁min(', '▁count('
+            #
+            #     , '▁)', '▁<', '▁>', '▁=', '<', '>', '=', '▁!', '!', '(*)', "▁'",
+            #     '▁,', '▁:', '_ID', '_id' , '[SEP]']
         else:
             raise ValueError
 
@@ -111,11 +137,16 @@ class myTokenizer():
 
             list_of_add_toks += list(tokenizer_add.get_vocab().keys())
 
-        self.tokenizer.add_tokens(list(list_of_add_toks))
+        # self.tokenizer.add_tokens(list(list_of_add_toks))
 
-        self.sep_token_id = self.tokenizer('[SEP]', add_special_tokens=True)['input_ids'][1]
+        self.sep_token_id = self.tokenizer('[SEP]', add_special_tokens=True)['input_ids'][0]
 
         if self.args.debug_mode:
+            print(self.tokenizer('[SEP]', add_special_tokens=True))
+            print(args.vocab)
+            print("Number of tokens in tokenizer: ", len(tokenizer.get_vocab()))
+            print(sorted(list(tokenizer.get_vocab().items()), key=lambda x : x[1])[:20])
+            print(sorted(list(tokenizer.get_vocab().items()), key=lambda x : x[1])[-20:])
             print("Id of [SEP] token: ", self.sep_token_id)
 
 

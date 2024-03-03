@@ -177,7 +177,12 @@ def get_corpus(data_args, seq_len, split='train', loaded_vocab=None, nofs=None):
 
     with open(path, 'r') as f_reader:
         for row in f_reader:
-            sentence_lst['src'].append(json.loads(row)['src'].strip())
+            sentence_lst['src'].append(json.loads(row)['src'].strip().replace("<page_title>", "<PAGESTART>").replace("</page_title>", "<PAGEEND>") \
+                                    .replace("<section_title>", "<SECTIONSTART>").replace("</section_title>", "<SECTIONEND>") \
+                                    .replace("<table>", "<TABLESTART>").replace("</table>", "<TABLEEND>") \
+                                    .replace("<cell>", "<CELLSTART>").replace("</cell>", "<CELLEND>") \
+                                    .replace("<col_header>", "<COLHEADERSTART>").replace("</col_header>", "<COLHEADEREND>") \
+                                    .replace("<row_header>", "<ROWHEADERSTART>").replace("</row_header>", "<ROWHEADEREND>"))
             sentence_lst['trg'].append(json.loads(row)['trg'].strip())
             nofs -= 1
             if nofs <= 0:

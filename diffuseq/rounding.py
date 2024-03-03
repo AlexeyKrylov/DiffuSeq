@@ -93,7 +93,7 @@ def denoised_fn_round(args, model, text_emb, t, global_model=False):
     old_shape = text_emb.shape
     old_device = text_emb.device
 
-    # global_model = False
+    global_model = False
 
     if global_model:
         logits = global_model.model.get_logits(text_emb)

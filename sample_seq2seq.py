@@ -19,9 +19,13 @@ from basic_utils import (
     load_defaults_config,
     create_model_and_diffusion,
     add_dict_to_argparser,
-    args_to_dict,
     load_tokenizer
 )
+
+from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
+
+def get_bleu(recover, reference):
+    return sentence_bleu([reference.split()], recover.split(), smoothing_function=SmoothingFunction().method4,)
 
 
 def create_argparser(sample='valid', path='./checkpoint-path/model0010000.pt'):
@@ -35,7 +39,7 @@ def create_argparser(sample='valid', path='./checkpoint-path/model0010000.pt'):
 
 
 def main(filename):
-    args = create_argparser('valid', path=f'./checkpoint-path/Bert/{filename}.pt').parse_args()
+    args = create_argparser('valid', path=f'./checkpoint-path/ToTTo/{filename}.pt').parse_args()
 
     dist_util.setup_dist()
     logger.configure()
@@ -128,7 +132,7 @@ def main(filename):
 
     nofb = 0
     try:
-        while nofb < 4:
+        while nofb < 5:
         # while True:
             cond = next(data_valid)
             all_test_data.append(cond)
@@ -136,7 +140,6 @@ def main(filename):
     except StopIteration:
         print('### End of reading iteration...')
 
-    score = 0
     for cond in tqdm(all_test_data):
 
         input_ids_x = cond.pop('input_ids').to(dist_util.dev())
@@ -145,7 +148,7 @@ def main(filename):
         attention_mask = cond.pop('attention_mask')
         input_ids_mask_ori = input_ids_mask
 
-        noise = th.randn_like(x_start)
+        noise = th.randn_like(x_start) * args.noise_factor
         input_ids_mask = th.broadcast_to(input_ids_mask.unsqueeze(dim=-1), x_start.shape).to(dist_util.dev())
         x_noised = th.where(input_ids_mask==0, x_start, noise)
         if args.use_fp16:
@@ -195,10 +198,8 @@ def main(filename):
         word_lst_ref = []
         word_lst_source = []
 
-
         arr = np.concatenate(all_sentence, axis=0)
         x_t = th.tensor(arr).cuda()
-
 
         reshaped_x_t = x_t.to(x_start.dtype)
         logits = model.get_logits(reshaped_x_t)  # bsz, seqlen, vocab
@@ -216,20 +217,28 @@ def main(filename):
             word_lst_source.append(tokenizer.decode_token(seq[:len_x]))
             word_lst_ref.append(tokenizer.decode_token(seq[len_x:]))
 
-        fout = open(out_path, 'a')
-        for (recov, ref, src) in zip(word_lst_recover, word_lst_ref, word_lst_source):
-            score += (recov == ref)
-            print(json.dumps({"recover": recov, "reference": ref, "source": src}))
-            print(json.dumps({"recover": recov, "reference": ref, "source": src}), file=fout)
-        fout.close()
-        print(score)
+        print(filename)
+        print("Accuracy = ", np.array([i == j for i, j in zip(word_lst_recover, word_lst_ref)]).mean())
+        print("BLEU = ", np.array([get_bleu(i.lower(), j.lower()) for i, j in zip(word_lst_recover, word_lst_ref)]).mean())
+        print(len(word_lst_recover))
 
-    print(score)
-    print('### Total takes {:.2f}s .....'.format(time.time() - start_t))
-    print(f'### Written the decoded output to {out_path}')
+        # fout = open(out_path, 'a')
+        # for (recov, ref, src) in zip(word_lst_recover, word_lst_ref, word_lst_source):
+        #     score += (recov == ref)
+        #     print(json.dumps({"recover": recov, "reference": ref, "source": src}))
+        #     print(json.dumps({"recover": recov, "reference": ref, "source": src}), file=fout)
+        # fout.close()
+        # print(score)
+
+    # print(score)
+    # print('### Total takes {:.2f}s .....'.format(time.time() - start_t))
+    # print(f'### Written the decoded output to {out_path}')
 
 
 if __name__ == "__main__":
-    main("model010000")
-    # main("ema_0.9999_010000")
+    for ppath in [f'model{"".join([str(0) for i in range(6 - len(str(i)))])}{str(i)}' for i in range(500, 4001, 500)] + \
+    [f'ema_0.9999_{"".join([str(0) for i in range(6 - len(str(i)))])}{str(i)}' for i in range(500, 4001, 500)]:
+        main(ppath)
+    # main("model001000")
+    # main("ema_0.9999_040000")
 

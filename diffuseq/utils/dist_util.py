@@ -34,6 +34,8 @@ def setup_dist():
         print(_find_free_port()) # ADD BY ME
         os.environ["MASTER_PORT"] = str(port)
         os.environ['LOCAL_RANK'] = str(0)
+
+
     
     dist.init_process_group(backend=backend, init_method="env://")
 
